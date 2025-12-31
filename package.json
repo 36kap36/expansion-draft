@@ -1,0 +1,9 @@
+{
+  "name": "expansion-draft",
+  "version": "1.0.0",
+  "description": "Fantasy Football Expansion Draft App",
+  "type": "module",
+  "scripts": {
+    "start": "python -m http.server 8000"
+  }
+}
