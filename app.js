@@ -6,6 +6,7 @@ import {
     saveDispersed, loadDispersed,
     resetAllData
 } from './storage.js';
+import { listenToFirebase } from './firebase.js';
 
 const POSITION_LIMITS = {
     QB: 1, RB: 2, WR: 3, TE: 1, IDP: 2, K: 1, FLEX: 3, SUPERFLEX: 1
@@ -21,10 +22,10 @@ let state = {
     leagueData: null,
     rankings: {},
     currentView: 'protect',
-    protections: loadProtections(),
-    draftOrder: loadDraftOrder(),
-    draftPicks: loadDraftPicks(),
-    dispersed: new Set(loadDispersed()),
+    protections: {},           // Changed from loadProtections()
+    draftOrder: [],            // Changed from loadDraftOrder()
+    draftPicks: [],            // Changed from loadDraftPicks()
+    dispersed: new Set(),      // Changed from new Set(loadDispersed())
     currentPick: 0,
     timeRemaining: PICK_TIME_LIMIT,
     timerInterval: null,
@@ -33,7 +34,7 @@ let state = {
     selectedOwner: null,
     selectedPlayers: [],
     ownerChoice: {},
-    draftView: 'table' // 'table' or 'roster'
+    draftView: 'table'
 };
 
 // Initialize app
@@ -41,6 +42,24 @@ async function init() {
     showLoading();
     
     try {
+        // Load Firebase data
+        state.protections = await loadProtections();
+        state.draftPicks = await loadDraftPicks();
+        state.draftOrder = await loadDraftOrder();
+        const dispersedArray = await loadDispersed();
+        state.dispersed = new Set(dispersedArray);
+        
+        // Set up real-time listeners
+        listenToFirebase('draft_picks', (picks) => {
+            if (picks) {
+                state.draftPicks = picks;
+                state.currentPick = picks.length;
+                if (state.currentView === 'draft' || state.currentView === 'league') {
+                    renderView(state.currentView);
+                }
+            }
+        });
+        
         state.leagueData = await fetchLeagueData();
         state.rankings = await fetchFantasyCalcRankings();
         state.currentPick = state.draftPicks.length;
