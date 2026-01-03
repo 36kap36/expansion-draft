@@ -1,3 +1,5 @@
+// PART 1 OF 2 - Copy this first, then get Part 2
+
 import { fetchLeagueData, fetchFantasyCalcRankings } from './api.js';
 import { 
     saveProtections, loadProtections,
@@ -12,20 +14,19 @@ const POSITION_LIMITS = {
     QB: 1, RB: 2, WR: 3, TE: 1, IDP: 2, K: 1, FLEX: 3, SUPERFLEX: 1
 };
 
-const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DL", "LB", "DB"];
+const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DL", "DE", "LB", "DB"];
 const ROSTER_SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "FLEX", "SUPERFLEX", "K", "DL", "LB", "DB"];
 const MAX_FROM_EACH_TEAM = 3;
 const PICK_TIME_LIMIT = 600;
 
-// Global state
 let state = {
     leagueData: null,
     rankings: {},
     currentView: 'protect',
-    protections: {},           // Changed from loadProtections()
-    draftOrder: [],            // Changed from loadDraftOrder()
-    draftPicks: [],            // Changed from loadDraftPicks()
-    dispersed: new Set(),      // Changed from new Set(loadDispersed())
+    protections: {},
+    draftOrder: [],
+    draftPicks: [],
+    dispersed: new Set(),
     currentPick: 0,
     timeRemaining: PICK_TIME_LIMIT,
     timerInterval: null,
@@ -37,19 +38,16 @@ let state = {
     draftView: 'table'
 };
 
-// Initialize app
 async function init() {
     showLoading();
     
     try {
-        // Load Firebase data
         state.protections = await loadProtections();
         state.draftPicks = await loadDraftPicks();
         state.draftOrder = await loadDraftOrder();
         const dispersedArray = await loadDispersed();
         state.dispersed = new Set(dispersedArray);
         
-        // Set up real-time listeners
         listenToFirebase('draft_picks', (picks) => {
             if (picks) {
                 state.draftPicks = picks;
@@ -81,6 +79,7 @@ async function init() {
         setupNavigation();
         renderView(state.currentView);
     } catch (error) {
+        console.error('Init error:', error);
         showError('Failed to load league data. Please refresh the page.');
     }
 }
@@ -93,7 +92,6 @@ function showError(message) {
     document.getElementById('content').innerHTML = `<div class="loading" style="color: #f87171;">${message}</div>`;
 }
 
-// Navigation
 function setupNavigation() {
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -109,7 +107,6 @@ function setupNavigation() {
     document.querySelector(`[data-view="${state.currentView}"]`).classList.add('active');
 }
 
-// Render views
 function renderView(view) {
     const content = document.getElementById('content');
     
@@ -129,7 +126,66 @@ function renderView(view) {
     }
 }
 
-// Protect View
+function calculatePositionCounts(playerIds) {
+    const counts = {};
+    Object.keys(POSITION_LIMITS).forEach(k => counts[k] = 0);
+    
+    // Sort players to fill positions in priority order
+    const playerPositions = playerIds.map(pid => {
+        const pos = state.leagueData.players[pid]?.position || '?';
+        return { pid, pos };
+    });
+    
+    playerPositions.forEach(({ pid, pos }) => {
+        let assigned = false;
+        
+        // Try exact position match first
+        if (pos === 'QB' && counts.QB < POSITION_LIMITS.QB) {
+            counts.QB++;
+            assigned = true;
+        } else if (pos === 'RB' && counts.RB < POSITION_LIMITS.RB) {
+            counts.RB++;
+            assigned = true;
+        } else if (pos === 'WR' && counts.WR < POSITION_LIMITS.WR) {
+            counts.WR++;
+            assigned = true;
+        } else if (pos === 'TE' && counts.TE < POSITION_LIMITS.TE) {
+            counts.TE++;
+            assigned = true;
+        } else if (pos === 'K' && counts.K < POSITION_LIMITS.K) {
+            counts.K++;
+            assigned = true;
+        } else if ((pos === 'DL' || pos === 'LB' || pos === 'DB' || pos === 'DE') && counts.IDP < POSITION_LIMITS.IDP) {
+            counts.IDP++;
+            assigned = true;
+        }
+        
+        // If not assigned, try FLEX
+        if (!assigned && (pos === 'RB' || pos === 'WR' || pos === 'TE') && counts.FLEX < POSITION_LIMITS.FLEX) {
+            counts.FLEX++;
+            assigned = true;
+        }
+        
+        // If still not assigned, try SUPERFLEX
+        if (!assigned && (pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE') && counts.SUPERFLEX < POSITION_LIMITS.SUPERFLEX) {
+            counts.SUPERFLEX++;
+            assigned = true;
+        }
+        
+        // If still not assigned, count as overage on primary position
+        if (!assigned) {
+            if (pos === 'QB') counts.QB++;
+            else if (pos === 'RB') counts.RB++;
+            else if (pos === 'WR') counts.WR++;
+            else if (pos === 'TE') counts.TE++;
+            else if (pos === 'K') counts.K++;
+            else if (pos === 'DL' || pos === 'LB' || pos === 'DB' || pos === 'DE') counts.IDP++;
+        }
+    });
+    
+    return counts;
+}
+
 function renderProtectView(container) {
     const owners = state.leagueData.rosters.map(r => ({
         id: r.owner_id,
@@ -140,10 +196,7 @@ function renderProtectView(container) {
     if (!state.selectedOwner) {
         container.innerHTML = `
             <div class="card">
-                <h2 class="card-title">
-                    <span>🛡️</span>
-                    Select Owner
-                </h2>
+                <h2 class="card-title"><span>🛡️</span> Select Owner</h2>
                 <div class="input-group">
                     <select id="owner-select">
                         <option value="">Choose an owner...</option>
@@ -158,9 +211,9 @@ function renderProtectView(container) {
             if (state.selectedOwner) {
                 const prot = state.protections[state.selectedOwner];
                 if (Array.isArray(prot)) {
-                    state.selectedPlayers = prot;
+                    state.selectedPlayers = [...prot];
                 } else if (prot && prot.players) {
-                    state.selectedPlayers = prot.players;
+                    state.selectedPlayers = [...prot.players];
                 } else {
                     state.selectedPlayers = [];
                 }
@@ -173,14 +226,15 @@ function renderProtectView(container) {
     const owner = owners.find(o => o.id === state.selectedOwner);
     const ownerName = state.leagueData.ownerMap[state.selectedOwner];
     const choice = state.ownerChoice[state.selectedOwner] || null;
-    const counts = calculatePositionCounts(state.selectedPlayers);
     
-    // Check if protections are locked
     const protectionData = state.protections[state.selectedOwner];
     const isLocked = protectionData && protectionData._locked;
     const savedPassword = protectionData ? protectionData._password : null;
+    
+    // Recalculate counts
+    const counts = calculatePositionCounts(state.selectedPlayers);
+    const hasOverages = Object.entries(counts).some(([pos, count]) => count > POSITION_LIMITS[pos]);
 
-    // Sort owner's players by position then FantasyCalc rank
     const sortedPlayers = owner.players.map(pid => {
         const player = state.leagueData.players[pid] || {};
         const ranking = state.rankings[pid] || { overallRank: 9999, posRank: 999 };
@@ -195,7 +249,12 @@ function renderProtectView(container) {
     }).sort((a, b) => {
         const posA = POSITION_ORDER.indexOf(a.position);
         const posB = POSITION_ORDER.indexOf(b.position);
-        if (posA !== posB) return posA - posB;
+        if (posA !== -1 && posB !== -1) {
+            if (posA !== posB) return posA - posB;
+            return a.overallRank - b.overallRank;
+        }
+        if (posA === -1 && posB !== -1) return 1;
+        if (posA !== -1 && posB === -1) return -1;
         return a.overallRank - b.overallRank;
     });
 
@@ -215,17 +274,13 @@ function renderProtectView(container) {
     container.innerHTML = `
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 class="card-title">
-                    <span>🛡️</span>
-                    ${ownerName}
-                </h2>
+                <h2 class="card-title"><span>🛡️</span> ${ownerName}</h2>
                 <button class="btn btn-secondary" id="back-btn">← Back</button>
             </div>
         </div>
 
         <div class="card">
             <h3 style="color: white; margin-bottom: 1rem;">Choose Option</h3>
-            
             ${isLocked ? `
                 <div class="warning-box">
                     <p>🔒 Protections are locked. Enter password to unlock and make changes.</p>
@@ -244,7 +299,6 @@ function renderProtectView(container) {
                         </div>
                     </label>
                 </div>
-
                 <div class="toggle-option">
                     <input type="radio" id="disperse-radio" name="owner-choice" value="disperse" ${choice === 'disperse' ? 'checked' : ''}>
                     <label for="disperse-radio">
@@ -257,7 +311,7 @@ function renderProtectView(container) {
             `}
         </div>
 
-        ${choice === 'protect' ? `
+        ${choice === 'protect' && !isLocked ? `
             <div class="card">
                 <h3 style="color: white; margin-bottom: 1rem;">Position Limits</h3>
                 <div class="position-grid">
@@ -268,6 +322,15 @@ function renderProtectView(container) {
                         </div>
                     `).join('')}
                 </div>
+                ${hasOverages ? `
+                    <div class="warning-box" style="margin-top: 1rem;">
+                        <p>⚠️ You have exceeded position limits! Remove players before saving:</p>
+                        <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
+                            ${Object.entries(counts).filter(([pos, count]) => count > POSITION_LIMITS[pos])
+                                .map(([pos, count]) => `<li>${pos}: ${count}/${POSITION_LIMITS[pos]} (${count - POSITION_LIMITS[pos]} over)</li>`).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
             </div>
 
             ${protectedPlayers.length > 0 ? `
@@ -305,14 +368,14 @@ function renderProtectView(container) {
                     <h3 style="color: white;">Select Players to Protect</h3>
                     <div style="display: flex; gap: 0.5rem;">
                         <button class="btn btn-danger" id="reset-protections-btn">Reset Protections</button>
-                        <button class="btn btn-primary" id="save-btn">Save & Lock Protections</button>
+                        <button class="btn btn-primary" id="save-btn" ${hasOverages ? 'disabled' : ''}>Save & Lock Protections</button>
                     </div>
                 </div>
                 <div class="input-group" style="max-width: 300px;">
                     <label>Password (required to save and lock)</label>
-                    <input type="password" id="password-input" placeholder="Enter password">
+                    <input type="password" id="password-input" placeholder="Enter password" ${hasOverages ? 'disabled' : ''}>
                 </div>
-                <div class="table-container">
+                <div class="table-container" id="protect-table-container">
                     <table class="player-table">
                         <thead>
                             <tr>
@@ -342,7 +405,7 @@ function renderProtectView(container) {
                     </table>
                 </div>
             </div>
-        ` : choice === 'disperse' ? `
+        ` : choice === 'disperse' && !isLocked ? `
             <div class="info-box">
                 <p>✓ Team marked as dispersed. All players are available in the draft pool.</p>
             </div>
@@ -358,20 +421,18 @@ function renderProtectView(container) {
         renderProtectView(container);
     });
 
-    // Unlock button handler
     if (isLocked && document.getElementById('unlock-btn')) {
         document.getElementById('unlock-btn').addEventListener('click', () => {
             const password = document.getElementById('unlock-password').value;
             if (password === savedPassword) {
-                // Unlock by removing lock flags
                 const currentProtections = state.protections[state.selectedOwner];
                 if (Array.isArray(currentProtections)) {
-                    state.selectedPlayers = currentProtections;
+                    state.selectedPlayers = [...currentProtections];
                 } else {
-                    state.selectedPlayers = currentProtections.players || [];
+                    state.selectedPlayers = [...(currentProtections.players || [])];
                 }
                 delete state.protections[state.selectedOwner];
-                state.protections[state.selectedOwner] = state.selectedPlayers;
+                state.protections[state.selectedOwner] = [...state.selectedPlayers];
                 saveProtections(state.protections);
                 alert('Protections unlocked!');
                 renderProtectView(container);
@@ -381,7 +442,7 @@ function renderProtectView(container) {
         });
     }
 
-    if (isLocked) return; // Don't set up other handlers if locked
+    if (isLocked) return;
 
     const protectRadio = document.getElementById('protect-radio');
     const disperseRadio = document.getElementById('disperse-radio');
@@ -390,7 +451,14 @@ function renderProtectView(container) {
         protectRadio.addEventListener('change', () => {
             state.ownerChoice[state.selectedOwner] = 'protect';
             state.dispersed.delete(state.selectedOwner);
-            state.selectedPlayers = state.protections[state.selectedOwner] || [];
+            const prot = state.protections[state.selectedOwner];
+            if (Array.isArray(prot)) {
+                state.selectedPlayers = [...prot];
+            } else if (prot && prot.players) {
+                state.selectedPlayers = [...prot.players];
+            } else {
+                state.selectedPlayers = [];
+            }
             renderProtectView(container);
         });
         
@@ -401,23 +469,29 @@ function renderProtectView(container) {
     }
 
     if (choice === 'protect') {
+        const tableContainer = document.getElementById('protect-table-container');
+        
         document.querySelectorAll('[data-player-id]').forEach(item => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
+                
                 const playerId = item.dataset.playerId;
+                const scrollPos = tableContainer.scrollTop;
+                
                 if (state.selectedPlayers.includes(playerId)) {
                     state.selectedPlayers = state.selectedPlayers.filter(id => id !== playerId);
                 } else {
-                    state.selectedPlayers.push(playerId);
+                    state.selectedPlayers = [...state.selectedPlayers, playerId];
                 }
-                
-                // Store scroll position
-                const scrollPos = window.pageYOffset || document.documentElement.scrollTop;
                 
                 renderProtectView(container);
                 
-                // Restore scroll position
-                window.scrollTo(0, scrollPos);
+                setTimeout(() => {
+                    const newTableContainer = document.getElementById('protect-table-container');
+                    if (newTableContainer) {
+                        newTableContainer.scrollTop = scrollPos;
+                    }
+                }, 10);
             });
         });
 
@@ -430,41 +504,43 @@ function renderProtectView(container) {
             }
         });
 
-        document.getElementById('save-btn').addEventListener('click', () => {
-            const password = document.getElementById('password-input').value;
-            
-            if (!password) {
-                alert('Please enter a password to lock your protections.');
-                return;
-            }
-            
-            const counts = calculatePositionCounts(state.selectedPlayers);
-            const errors = [];
-            
-            Object.entries(POSITION_LIMITS).forEach(([pos, limit]) => {
-                if (counts[pos] > limit) {
-                    errors.push(`${pos}: ${counts[pos]}/${limit} (over limit)`);
+        const saveBtn = document.getElementById('save-btn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                const password = document.getElementById('password-input').value;
+                
+                if (!password) {
+                    alert('Please enter a password to lock your protections.');
+                    return;
                 }
+                
+                const finalCounts = calculatePositionCounts(state.selectedPlayers);
+                const errors = [];
+                
+                Object.entries(POSITION_LIMITS).forEach(([pos, limit]) => {
+                    if (finalCounts[pos] > limit) {
+                        errors.push(`${pos}: ${finalCounts[pos]}/${limit} (over limit)`);
+                    }
+                });
+                
+                if (errors.length > 0) {
+                    alert('Position limits exceeded:\n' + errors.join('\n'));
+                    return;
+                }
+                
+                state.protections[state.selectedOwner] = {
+                    players: [...state.selectedPlayers],
+                    _password: password,
+                    _locked: true
+                };
+                saveProtections(state.protections);
+                alert('Protections saved and locked!');
+                renderProtectView(container);
             });
-            
-            if (errors.length > 0) {
-                alert('Position limits exceeded:\n' + errors.join('\n'));
-                return;
-            }
-            
-            // Save with password and lock flag
-            state.protections[state.selectedOwner] = {
-                players: state.selectedPlayers,
-                _password: password,
-                _locked: true
-            };
-            saveProtections(state.protections);
-            alert('Protections saved and locked!');
-            renderProtectView(container);
-        });
+        }
     }
 
-    if (choice === 'disperse') {
+    if (choice === 'disperse' && document.getElementById('save-disperse-btn')) {
         document.getElementById('save-disperse-btn').addEventListener('click', () => {
             state.dispersed.add(state.selectedOwner);
             state.protections[state.selectedOwner] = [];
@@ -475,7 +551,6 @@ function renderProtectView(container) {
     }
 }
 
-// Setup View
 function renderSetupView(container) {
     const dispersedTeams = [];
     state.leagueData.rosters.forEach(r => {
@@ -487,16 +562,12 @@ function renderSetupView(container) {
     container.innerHTML = `
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h2 class="card-title" style="margin-bottom: 0;">
-                    <span>👥</span>
-                    Draft Order
-                </h2>
+                <h2 class="card-title" style="margin-bottom: 0;"><span>👥</span> Draft Order</h2>
                 <button class="btn btn-primary" id="randomize-btn">🎲 Randomize Order</button>
             </div>
             <p style="color: #94a3b8; margin-bottom: 1rem; font-size: 0.875rem;">
                 Add expansion teams and any dispersed teams to the draft order. Snake draft will alternate picks.
             </p>
-            
             <div id="draft-order-list">
                 ${state.draftOrder.map((team, idx) => `
                     <div class="input-group" style="display: flex; gap: 0.5rem; align-items: center;">
@@ -506,12 +577,10 @@ function renderSetupView(container) {
                     </div>
                 `).join('')}
             </div>
-            
             <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
                 <button class="btn btn-primary" id="add-team-btn">+ Add Team</button>
             </div>
         </div>
-
         ${dispersedTeams.length > 0 ? `
             <div class="info-box">
                 <p><strong>Dispersed Teams:</strong> ${dispersedTeams.join(', ')}</p>
@@ -555,7 +624,6 @@ function renderSetupView(container) {
     });
 }
 
-// League View
 function renderLeagueView(container) {
     const draftedPlayers = new Map();
     state.draftPicks.forEach(pick => {
@@ -573,12 +641,8 @@ function renderLeagueView(container) {
 
     container.innerHTML = `
         <div class="card">
-            <h2 class="card-title">
-                <span>🏈</span>
-                League Rosters
-            </h2>
+            <h2 class="card-title"><span>🏈</span> League Rosters</h2>
         </div>
-
         ${state.leagueData.rosters.map(roster => {
             const ownerId = roster.owner_id;
             const ownerName = state.leagueData.ownerMap[ownerId];
@@ -610,7 +674,12 @@ function renderLeagueView(container) {
             }).sort((a, b) => {
                 const posA = POSITION_ORDER.indexOf(a.position);
                 const posB = POSITION_ORDER.indexOf(b.position);
-                if (posA !== posB) return posA - posB;
+                if (posA !== -1 && posB !== -1) {
+                    if (posA !== posB) return posA - posB;
+                    return a.overallRank - b.overallRank;
+                }
+                if (posA === -1 && posB !== -1) return 1;
+                if (posA !== -1 && posB === -1) return -1;
                 return a.overallRank - b.overallRank;
             });
 
@@ -637,13 +706,9 @@ function renderLeagueView(container) {
     `;
 }
 
-// Draft View
 function renderDraftView(container) {
     const availablePlayers = getAvailablePlayers();
-    const filtered = state.positionFilter === 'ALL' 
-        ? availablePlayers 
-        : availablePlayers.filter(p => p.position === state.positionFilter);
-
+    const filtered = state.positionFilter === 'ALL' ? availablePlayers : availablePlayers.filter(p => p.position === state.positionFilter);
     const currentDrafter = getCurrentDrafter();
     
     if (state.draftView === 'roster') {
@@ -663,10 +728,7 @@ function renderTableView(container, filtered, currentDrafter) {
                         <p>Now drafting: <strong style="color: white;">${currentDrafter}</strong></p>
                     </div>
                     <div class="draft-timer">
-                        <div class="timer-display">
-                            <span>⏰</span>
-                            ${formatTime(state.timeRemaining)}
-                        </div>
+                        <div class="timer-display"><span>⏰</span>${formatTime(state.timeRemaining)}</div>
                     </div>
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
@@ -674,15 +736,11 @@ function renderTableView(container, filtered, currentDrafter) {
                     <button class="btn btn-danger" id="reset-btn">Reset Draft</button>
                 </div>
             </div>
-
             <div class="filter-buttons">
                 ${['ALL', ...POSITION_ORDER].map(pos => `
-                    <button class="filter-btn ${state.positionFilter === pos ? 'active' : ''}" data-filter="${pos}">
-                        ${pos}
-                    </button>
+                    <button class="filter-btn ${state.positionFilter === pos ? 'active' : ''}" data-filter="${pos}">${pos}</button>
                 `).join('')}
             </div>
-
             <div class="table-container">
                 <table class="player-table">
                     <thead>
@@ -692,7 +750,7 @@ function renderTableView(container, filtered, currentDrafter) {
                             <th>Player</th>
                             <th>Pos</th>
                             <th>Team</th>
-                            <th>Owner</th>
+                            <th>Current Owner</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -701,9 +759,7 @@ function renderTableView(container, filtered, currentDrafter) {
                             const canDraft = getTeamPicksCount(player.originalOwnerId) < MAX_FROM_EACH_TEAM;
                             const isSelected = state.selectedPlayer?.playerId === player.playerId;
                             return `
-                                <tr class="${isSelected ? 'selected' : ''}" 
-                                    data-player-id="${player.playerId}"
-                                    data-owner-id="${player.originalOwnerId}"
+                                <tr class="${isSelected ? 'selected' : ''}" data-player-id="${player.playerId}" data-owner-id="${player.originalOwnerId}"
                                     style="cursor: ${!canDraft ? 'not-allowed' : 'pointer'}; opacity: ${!canDraft ? '0.5' : '1'}">
                                     <td><span class="rank-badge">#${player.overallRank}</span></td>
                                     <td><span class="rank-badge">${player.position} ${player.posRank}</span></td>
@@ -718,14 +774,12 @@ function renderTableView(container, filtered, currentDrafter) {
                     </tbody>
                 </table>
             </div>
-
             ${state.selectedPlayer ? `
                 <button class="btn btn-success" id="confirm-btn" style="width: 100%; margin-top: 1rem;">
                     Confirm Pick: ${state.selectedPlayer.name}
                 </button>
             ` : ''}
         </div>
-
         <div class="card">
             <h3 class="card-title">Draft History</h3>
             <div class="draft-history">
@@ -750,7 +804,6 @@ function renderTableView(container, filtered, currentDrafter) {
             </div>
         </div>
     `;
-
     setupDraftEventListeners(container, filtered);
 }
 
@@ -770,27 +823,22 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                         <p>Now drafting: <strong style="color: white;">${currentDrafter}</strong></p>
                     </div>
                     <div class="draft-timer">
-                        <div class="timer-display">
-                            <span>⏰</span>
-                            ${formatTime(state.timeRemaining)}
-                        </div>
+                        <div class="timer-display"><span>⏰</span>${formatTime(state.timeRemaining)}</div>
                     </div>
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
+// Continue from Part 2 - starts inside renderRosterBoard function
+
                     <button class="btn btn-secondary" id="toggle-view-btn">📊 Table View</button>
                     <button class="btn btn-danger" id="reset-btn">Reset Draft</button>
                 </div>
             </div>
-
             <div class="filter-buttons">
                 ${['ALL', ...POSITION_ORDER].map(pos => `
-                    <button class="filter-btn ${state.positionFilter === pos ? 'active' : ''}" data-filter="${pos}">
-                        ${pos}
-                    </button>
+                    <button class="filter-btn ${state.positionFilter === pos ? 'active' : ''}" data-filter="${pos}">${pos}</button>
                 `).join('')}
             </div>
         </div>
-
         <div class="grid-2">
             <div>
                 <div class="card">
@@ -800,9 +848,10 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                             <thead>
                                 <tr>
                                     <th>Overall</th>
-                                    <th>Pos</th>
+                                    <th>Pos Rank</th>
                                     <th>Player</th>
                                     <th>Team</th>
+                                    <th>Owner</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -811,9 +860,7 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                                     const canDraft = getTeamPicksCount(player.originalOwnerId) < MAX_FROM_EACH_TEAM;
                                     const isSelected = state.selectedPlayer?.playerId === player.playerId;
                                     return `
-                                        <tr class="${isSelected ? 'selected' : ''}" 
-                                            data-player-id="${player.playerId}"
-                                            data-owner-id="${player.originalOwnerId}"
+                                        <tr class="${isSelected ? 'selected' : ''}" data-player-id="${player.playerId}" data-owner-id="${player.originalOwnerId}"
                                             style="cursor: ${!canDraft ? 'not-allowed' : 'pointer'}; opacity: ${!canDraft ? '0.5' : '1'}">
                                             <td><span class="rank-badge">#${player.overallRank}</span></td>
                                             <td><span class="rank-badge">${player.position} ${player.posRank}</span></td>
@@ -834,12 +881,10 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                     ` : ''}
                 </div>
             </div>
-
             <div>
                 ${state.draftOrder.map(teamId => {
                     const roster = getTeamRoster(teamId);
                     const rosterBySlot = fillRosterSlots(roster);
-
                     return `
                         <div class="team-roster">
                             <div class="team-header">
@@ -874,7 +919,6 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
             </div>
         </div>
     `;
-
     setupDraftEventListeners(container, availablePlayers);
 }
 
@@ -927,7 +971,6 @@ function setupDraftEventListeners(container, playerPool) {
     }
 }
 
-// Helper functions
 function fillRosterSlots(picks) {
     const slots = new Array(ROSTER_SLOTS.length).fill(null);
     const sortedPicks = [...picks].sort((a, b) => a.pickNumber - b.pickNumber);
@@ -949,7 +992,7 @@ function fillRosterSlots(picks) {
                 } else if (slotName === 'SUPERFLEX' && ['QB', 'RB', 'WR', 'TE'].includes(pos)) {
                     slots[i] = pick;
                     return;
-                } else if (slotName === 'DL' && pos === 'DL') {
+                } else if (slotName === 'DL' && (pos === 'DL' || pos === 'DE')) {
                     slots[i] = pick;
                     return;
                 } else if (slotName === 'LB' && pos === 'LB') {
@@ -964,50 +1007,6 @@ function fillRosterSlots(picks) {
     });
 
     return slots;
-}
-
-function calculatePositionCounts(playerIds) {
-    const counts = {};
-    Object.keys(POSITION_LIMITS).forEach(k => counts[k] = 0);
-    
-    const used = {
-        QB: 0, RB: 0, WR: 0, TE: 0, K: 0, IDP: 0,
-        FLEX: 0, SUPERFLEX: 0
-    };
-    
-    playerIds.forEach(pid => {
-        const pos = state.leagueData.players[pid]?.position || '?';
-        
-        if (pos === 'QB' && used.QB < POSITION_LIMITS.QB) {
-            used.QB++;
-            counts.QB++;
-        } else if (pos === 'RB' && used.RB < POSITION_LIMITS.RB) {
-            used.RB++;
-            counts.RB++;
-        } else if (pos === 'WR' && used.WR < POSITION_LIMITS.WR) {
-            used.WR++;
-            counts.WR++;
-        } else if (pos === 'TE' && used.TE < POSITION_LIMITS.TE) {
-            used.TE++;
-            counts.TE++;
-        } else if (pos === 'K' && used.K < POSITION_LIMITS.K) {
-            used.K++;
-            counts.K++;
-        } else if ((pos === 'DL' || pos === 'LB' || pos === 'DB') && used.IDP < POSITION_LIMITS.IDP) {
-            used.IDP++;
-            counts.IDP++;
-        }
-        else if ((pos === 'RB' || pos === 'WR' || pos === 'TE') && used.FLEX < POSITION_LIMITS.FLEX) {
-            used.FLEX++;
-            counts.FLEX++;
-        }
-        else if ((pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE') && used.SUPERFLEX < POSITION_LIMITS.SUPERFLEX) {
-            used.SUPERFLEX++;
-            counts.SUPERFLEX++;
-        }
-    });
-    
-    return counts;
 }
 
 function getAvailablePlayers() {
@@ -1113,5 +1112,4 @@ function stopTimer() {
     }
 }
 
-// Start the app
-init();
+init();                
