@@ -16,11 +16,81 @@ const POSITION_LIMITS = {
 
 const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DL", "DE", "LB", "DB"];
 const ROSTER_SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "FLEX", "SUPERFLEX", "K", "DL", "LB", "DB"];
-const PICK_TIME_LIMIT = 600;
+const PICK_TIME_LIMIT = 43200; // 12 hours in seconds
+const DRAFT_START_TIME = new Date('2026-04-10T23:00:00Z'); // April 10th, 7 PM Eastern (11 PM UTC)
+const MAX_DRAFT_ROUNDS = 12;
+const PROTECTIONS_LOCK_TIME = new Date('2026-04-02T03:59:00Z'); // April 1st, 11:59 PM ET (3:59 AM UTC next day)
 
 // Base max picks per team is 3; increases by 2 for each dispersed team
 function getMaxPicksPerTeam() {
     return 3 + (state.dispersed.size * 2);
+}
+
+// Fuzzy search: checks if search term matches player name (case insensitive)
+function fuzzyMatch(playerName, searchTerm) {
+    if (!searchTerm) return true;
+    
+    const search = searchTerm.toLowerCase();
+    const name = playerName.toLowerCase();
+    
+    let searchIdx = 0;
+    for (let i = 0; i < name.length && searchIdx < search.length; i++) {
+        if (name[i] === search[searchIdx]) {
+            searchIdx++;
+        }
+    }
+    return searchIdx === search.length;
+}
+
+// Check if draft has started
+function isDraftStarted() {
+    return new Date() >= DRAFT_START_TIME;
+}
+
+// Get time remaining until draft starts (returns object with days, hours, minutes, seconds)
+function getCountdownToDraftStart() {
+    const now = new Date();
+    const diff = DRAFT_START_TIME - now;
+    
+    if (diff <= 0) {
+        return { days: 0, hours: 0, minutes: 0, seconds: 0, started: true };
+    }
+    
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    return { days, hours, minutes, seconds, started: false };
+}
+
+// Check if draft is complete (has reached max rounds)
+function isDraftComplete() {
+    if (state.draftOrder.length === 0) return false;
+    const maxPicks = MAX_DRAFT_ROUNDS * state.draftOrder.length;
+    return state.currentPick >= maxPicks;
+}
+
+// Check if protections are locked (after April 1st 11:59 PM ET)
+function areProtectionsLocked() {
+    return new Date() >= PROTECTIONS_LOCK_TIME;
+}
+
+// Get time remaining until protections lock
+function getCountdownToProtectionsLock() {
+    const now = new Date();
+    const diff = PROTECTIONS_LOCK_TIME - now;
+    
+    if (diff <= 0) {
+        return { days: 0, hours: 0, minutes: 0, seconds: 0, locked: true };
+    }
+    
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    return { days, hours, minutes, seconds, locked: false };
 }
 
 let state = {
@@ -36,6 +106,7 @@ let state = {
     timerInterval: null,
     selectedPlayer: null,
     positionFilter: 'ALL',
+    searchTerm: '',
     selectedOwner: null,
     selectedPlayers: [],
     ownerChoice: {},
@@ -196,13 +267,27 @@ function renderProtectView(container) {
         name: state.leagueData.ownerMap[r.owner_id],
         players: r.players || []
     }));
+    
+    const protectionsLocked = areProtectionsLocked();
+    const lockCountdown = getCountdownToProtectionsLock();
 
     if (!state.selectedOwner) {
         container.innerHTML = `
             <div class="card">
                 <h2 class="card-title"><span>🛡️</span> Select Owner</h2>
+                ${protectionsLocked ? `
+                    <div class="warning-box" style="margin-bottom: 1rem;">
+                        <p>🔒 Protections are now locked and cannot be modified.</p>
+                        <p style="margin-top: 0.5rem; font-size: 0.875rem;">Deadline was April 1st at 11:59 PM ET</p>
+                    </div>
+                ` : `
+                    <div class="info-box" style="margin-bottom: 1rem;">
+                        <p><strong>Time until lock:</strong> ${lockCountdown.days}d ${lockCountdown.hours}h ${lockCountdown.minutes}m ${lockCountdown.seconds}s</p>
+                        <p style="margin-top: 0.5rem; font-size: 0.875rem;">Deadline: April 1st at 11:59 PM ET</p>
+                    </div>
+                `}
                 <div class="input-group">
-                    <select id="owner-select">
+                    <select id="owner-select" ${protectionsLocked ? 'disabled' : ''}>
                         <option value="">Choose an owner...</option>
                         ${owners.map(o => `<option value="${o.id}">${o.name}</option>`).join('')}
                     </select>
@@ -210,20 +295,44 @@ function renderProtectView(container) {
             </div>
         `;
 
-        document.getElementById('owner-select').addEventListener('change', (e) => {
-            state.selectedOwner = e.target.value;
-            if (state.selectedOwner) {
-                const prot = state.protections[state.selectedOwner];
-                if (Array.isArray(prot)) {
-                    state.selectedPlayers = [...prot];
-                } else if (prot && prot.players) {
-                    state.selectedPlayers = [...prot.players];
-                } else {
-                    state.selectedPlayers = [];
+        const ownerSelect = document.getElementById('owner-select');
+        if (ownerSelect && !protectionsLocked) {
+            ownerSelect.addEventListener('change', (e) => {
+                state.selectedOwner = e.target.value;
+                if (state.selectedOwner) {
+                    const prot = state.protections[state.selectedOwner];
+                    if (Array.isArray(prot)) {
+                        state.selectedPlayers = [...prot];
+                    } else if (prot && prot.players) {
+                        state.selectedPlayers = [...prot.players];
+                    } else {
+                        state.selectedPlayers = [];
+                    }
+                    renderProtectView(container);
                 }
-                renderProtectView(container);
-            }
-        });
+            });
+        }
+        
+        // Update countdown every second if not locked
+        if (!protectionsLocked) {
+            const countdownInterval = setInterval(() => {
+                const countdown = getCountdownToProtectionsLock();
+                if (countdown.locked) {
+                    clearInterval(countdownInterval);
+                    renderProtectView(container);
+                } else {
+                    const infoBoxes = document.querySelectorAll('.info-box');
+                    infoBoxes.forEach(box => {
+                        if (box.textContent.includes('Time until lock:')) {
+                            box.innerHTML = `
+                                <p><strong>Time until lock:</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s</p>
+                                <p style="margin-top: 0.5rem; font-size: 0.875rem;">Deadline: April 1st at 11:59 PM ET</p>
+                            `;
+                        }
+                    });
+                }
+            }, 1000);
+        }
         return;
     }
 
@@ -274,6 +383,23 @@ function renderProtectView(container) {
             posRank: ranking.posRank
         };
     });
+    
+    let statusHTML = '';
+    if (protectionsLocked) {
+        statusHTML = `
+            <div class="warning-box">
+                <p>🔒 Protections are locked. Changes can no longer be made.</p>
+                <p style="margin-top: 0.5rem; font-size: 0.875rem;">Deadline was April 1st at 11:59 PM ET</p>
+            </div>
+        `;
+    } else {
+        statusHTML = `
+            <div class="info-box">
+                <p><strong>Time until lock:</strong> ${lockCountdown.days}d ${lockCountdown.hours}h ${lockCountdown.minutes}m ${lockCountdown.seconds}s</p>
+                <p style="margin-top: 0.5rem; font-size: 0.875rem;">Deadline: April 1st at 11:59 PM ET</p>
+            </div>
+        `;
+    }
 
     container.innerHTML = `
         <div class="card">
@@ -281,11 +407,16 @@ function renderProtectView(container) {
                 <h2 class="card-title"><span>🛡️</span> ${ownerName}</h2>
                 <button class="btn btn-secondary" id="back-btn">← Back</button>
             </div>
+            ${statusHTML}
         </div>
 
         <div class="card">
             <h3 style="color: white; margin-bottom: 1rem;">Choose Option</h3>
-            ${isLocked ? `
+            ${protectionsLocked ? `
+                <div class="warning-box">
+                    <p>🔒 Protections are locked. No changes can be made after the April 1st deadline.</p>
+                </div>
+            ` : isLocked ? `
                 <div class="warning-box">
                     <p>🔒 Protections are locked. Enter password to unlock and make changes.</p>
                     <div class="input-group" style="margin-top: 1rem;">
@@ -315,7 +446,7 @@ function renderProtectView(container) {
             `}
         </div>
 
-        ${choice === 'protect' && !isLocked ? `
+        ${choice === 'protect' && !isLocked && !protectionsLocked ? `
             <div class="card">
                 <h3 style="color: white; margin-bottom: 1rem;">Position Limits</h3>
                 <div class="position-grid">
@@ -409,7 +540,7 @@ function renderProtectView(container) {
                     </table>
                 </div>
             </div>
-        ` : choice === 'disperse' && !isLocked ? `
+        ` : choice === 'disperse' && !isLocked && !protectionsLocked ? `
             <div class="info-box">
                 <p>✓ Team marked as dispersed. All players are available in the draft pool.</p>
             </div>
@@ -424,6 +555,27 @@ function renderProtectView(container) {
         state.selectedPlayers = [];
         renderProtectView(container);
     });
+    
+    // Update countdown every second if not locked
+    if (!protectionsLocked) {
+        const countdownInterval = setInterval(() => {
+            const countdown = getCountdownToProtectionsLock();
+            if (countdown.locked) {
+                clearInterval(countdownInterval);
+                renderProtectView(container);
+            } else {
+                const infoBoxes = document.querySelectorAll('.info-box');
+                infoBoxes.forEach(box => {
+                    if (box.textContent.includes('Time until lock:')) {
+                        box.innerHTML = `
+                            <p><strong>Time until lock:</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s</p>
+                            <p style="margin-top: 0.5rem; font-size: 0.875rem;">Deadline: April 1st at 11:59 PM ET</p>
+                        `;
+                    }
+                });
+            }
+        }, 1000);
+    }
 
     if (isLocked && document.getElementById('unlock-btn')) {
         document.getElementById('unlock-btn').addEventListener('click', () => {
@@ -447,6 +599,8 @@ function renderProtectView(container) {
     }
 
     if (isLocked) return;
+    
+    if (protectionsLocked) return;
 
     const protectRadio = document.getElementById('protect-radio');
     const disperseRadio = document.getElementById('disperse-radio');
@@ -475,6 +629,15 @@ function renderProtectView(container) {
     if (choice === 'protect') {
         const tableContainer = document.getElementById('protect-table-container');
         
+        if (protectionsLocked) {
+            // Disable all interactive elements when globally locked
+            document.querySelectorAll('[data-player-id]').forEach(item => {
+                item.style.cursor = 'not-allowed';
+                item.style.opacity = '0.5';
+            });
+            return;
+        }
+        
         document.querySelectorAll('[data-player-id]').forEach(item => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -500,6 +663,10 @@ function renderProtectView(container) {
         });
 
         document.getElementById('reset-protections-btn').addEventListener('click', () => {
+            if (protectionsLocked) {
+                alert('Protections are locked and cannot be modified.');
+                return;
+            }
             if (confirm('Reset all protections for this team? This will clear your selections.')) {
                 state.selectedPlayers = [];
                 delete state.protections[state.selectedOwner];
@@ -511,6 +678,11 @@ function renderProtectView(container) {
         const saveBtn = document.getElementById('save-btn');
         if (saveBtn) {
             saveBtn.addEventListener('click', () => {
+                if (protectionsLocked) {
+                    alert('Protections are locked. The deadline to submit protections was April 1st at 11:59 PM ET.');
+                    return;
+                }
+                
                 const password = document.getElementById('password-input').value;
                 
                 if (!password) {
@@ -545,6 +717,11 @@ function renderProtectView(container) {
     }
 
     if (choice === 'disperse' && document.getElementById('save-disperse-btn')) {
+        if (protectionsLocked) {
+            document.getElementById('save-disperse-btn').disabled = true;
+            return;
+        }
+        
         document.getElementById('save-disperse-btn').addEventListener('click', () => {
             state.dispersed.add(state.selectedOwner);
             state.protections[state.selectedOwner] = [];
@@ -723,12 +900,34 @@ function renderDraftView(container) {
 }
 
 function renderTableView(container, filtered, currentDrafter) {
+    const searchFiltered = filtered.filter(p => fuzzyMatch(p.name, state.searchTerm));
+    const draftStarted = isDraftStarted();
+    const draftComplete = isDraftComplete();
+    const countdown = getCountdownToDraftStart();
+    
+    let statusHTML = '';
+    if (!draftStarted) {
+        statusHTML = `
+            <div class="warning-box" style="margin-bottom: 1rem;">
+                <p><strong>Draft starts in:</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s</p>
+                <p style="margin-top: 0.5rem; font-size: 0.875rem;">April 10th, 2026 at 7:00 PM ET</p>
+            </div>
+        `;
+    } else if (draftComplete) {
+        statusHTML = `
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <p>✓ Draft Complete! All 12 rounds finished.</p>
+            </div>
+        `;
+    }
+    
     container.innerHTML = `
         <div class="card">
+            ${statusHTML}
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <div class="draft-header" style="margin-bottom: 0;">
                     <div class="draft-info">
-                        <h2>Pick #${state.currentPick + 1}</h2>
+                        <h2>Pick #${state.currentPick + 1} / ${MAX_DRAFT_ROUNDS * state.draftOrder.length}</h2>
                         <p>Now drafting: <strong style="color: white;">${currentDrafter}</strong></p>
                     </div>
                     <div class="draft-timer">
@@ -739,6 +938,9 @@ function renderTableView(container, filtered, currentDrafter) {
                     <button class="btn btn-secondary" id="toggle-view-btn">📋 Roster View</button>
                     <button class="btn btn-danger" id="reset-btn">Reset Draft</button>
                 </div>
+            </div>
+            <div class="input-group" style="max-width: 400px; margin-bottom: 1rem;">
+                <input type="text" id="player-search" placeholder="Search player by name..." value="${state.searchTerm}" style="padding: 0.75rem; font-size: 1rem;">
             </div>
             <div class="filter-buttons">
                 ${['ALL', ...POSITION_ORDER].map(pos => `
@@ -759,7 +961,7 @@ function renderTableView(container, filtered, currentDrafter) {
                         </tr>
                     </thead>
                     <tbody>
-                        ${filtered.map(player => {
+                        ${searchFiltered.map(player => {
                             const canDraft = getTeamPicksCount(player.originalOwnerId) < getMaxPicksPerTeam();
                             const isSelected = state.selectedPlayer?.playerId === player.playerId;
                             return `
@@ -818,12 +1020,33 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
         return `${round}.${pickInRound.toString().padStart(2, '0')}`;
     };
 
+    const draftStarted = isDraftStarted();
+    const draftComplete = isDraftComplete();
+    const countdown = getCountdownToDraftStart();
+    
+    let statusHTML = '';
+    if (!draftStarted) {
+        statusHTML = `
+            <div class="warning-box" style="margin-bottom: 1rem;">
+                <p><strong>Draft starts in:</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s</p>
+                <p style="margin-top: 0.5rem; font-size: 0.875rem;">April 10th, 2026 at 7:00 PM ET</p>
+            </div>
+        `;
+    } else if (draftComplete) {
+        statusHTML = `
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <p>✓ Draft Complete! All 12 rounds finished.</p>
+            </div>
+        `;
+    }
+
     container.innerHTML = `
         <div class="card">
+            ${statusHTML}
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <div class="draft-header" style="margin-bottom: 0;">
                     <div class="draft-info">
-                        <h2>Pick #${state.currentPick + 1}</h2>
+                        <h2>Pick #${state.currentPick + 1} / ${MAX_DRAFT_ROUNDS * state.draftOrder.length}</h2>
                         <p>Now drafting: <strong style="color: white;">${currentDrafter}</strong></p>
                     </div>
                     <div class="draft-timer">
@@ -831,11 +1054,12 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                     </div>
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
-// Continue from Part 2 - starts inside renderRosterBoard function
-
                     <button class="btn btn-secondary" id="toggle-view-btn">📊 Table View</button>
                     <button class="btn btn-danger" id="reset-btn">Reset Draft</button>
                 </div>
+            </div>
+            <div class="input-group" style="max-width: 400px; margin-bottom: 1rem;">
+                <input type="text" id="player-search" placeholder="Search player by name..." value="${state.searchTerm}" style="padding: 0.75rem; font-size: 1rem;">
             </div>
             <div class="filter-buttons">
                 ${['ALL', ...POSITION_ORDER].map(pos => `
@@ -860,7 +1084,7 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${(state.positionFilter === 'ALL' ? availablePlayers : availablePlayers.filter(p => p.position === state.positionFilter)).map(player => {
+                                ${(state.positionFilter === 'ALL' ? availablePlayers : availablePlayers.filter(p => p.position === state.positionFilter)).filter(p => fuzzyMatch(p.name, state.searchTerm)).map(player => {
                                     const canDraft = getTeamPicksCount(player.originalOwnerId) < getMaxPicksPerTeam();
                                     const isSelected = state.selectedPlayer?.playerId === player.playerId;
                                     return `
@@ -927,6 +1151,35 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
 }
 
 function setupDraftEventListeners(container, playerPool) {
+    const searchInput = document.getElementById('player-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            state.searchTerm = e.target.value;
+            renderDraftView(container);
+        });
+    }
+    
+    // Update countdown timer every second if draft hasn't started
+    if (!isDraftStarted()) {
+        const countdownInterval = setInterval(() => {
+            const countdown = getCountdownToDraftStart();
+            if (countdown.started) {
+                clearInterval(countdownInterval);
+                renderDraftView(container);
+            } else {
+                const statusBoxes = document.querySelectorAll('.warning-box');
+                statusBoxes.forEach(box => {
+                    if (box.textContent.includes('Draft starts in:')) {
+                        box.innerHTML = `
+                            <p><strong>Draft starts in:</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s</p>
+                            <p style="margin-top: 0.5rem; font-size: 0.875rem;">April 10th, 2026 at 7:00 PM ET</p>
+                        `;
+                    }
+                });
+            }
+        }, 1000);
+    }
+    
     document.querySelectorAll('[data-filter]').forEach(btn => {
         btn.addEventListener('click', () => {
             state.positionFilter = btn.dataset.filter;
@@ -953,6 +1206,10 @@ function setupDraftEventListeners(container, playerPool) {
 
     document.getElementById('reset-btn').addEventListener('click', () => {
         if (confirm('Reset the entire draft? This cannot be undone.')) {
+            if (!isDraftStarted()) {
+                alert('Cannot reset draft before it has started.');
+                return;
+            }
             state.draftPicks = [];
             state.currentPick = 0;
             state.timeRemaining = PICK_TIME_LIMIT;
@@ -970,7 +1227,7 @@ function setupDraftEventListeners(container, playerPool) {
         });
     }
 
-    if (state.currentPick < 100) {
+    if (isDraftStarted() && state.currentPick < (MAX_DRAFT_ROUNDS * state.draftOrder.length)) {
         startTimer();
     }
 }
@@ -1101,6 +1358,18 @@ function getTeamPicksCount(ownerId) {
 }
 
 function makeDraftPick(player) {
+    // Check if draft has started
+    if (!isDraftStarted()) {
+        alert('Draft has not started yet. Please wait until April 10th at 7:00 PM ET.');
+        return;
+    }
+    
+    // Check if draft is complete
+    if (isDraftComplete()) {
+        alert('Draft is complete! All 12 rounds have been finished.');
+        return;
+    }
+    
     const pick = {
         playerId: player.playerId,
         originalOwnerId: player.originalOwnerId || 'FA', // Handle free agents
