@@ -425,7 +425,10 @@ function renderProtectView(container) {
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h2 class="card-title"><span>🛡️</span> ${ownerName}</h2>
-                <button class="btn btn-secondary" id="back-btn">← Back</button>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-danger" id="reset-password-btn">🔑 Reset Password</button>
+                    <button class="btn btn-secondary" id="back-btn">← Back</button>
+                </div>
             </div>
             ${statusHTML}
         </div>
@@ -576,6 +579,63 @@ function renderProtectView(container) {
         renderProtectView(container);
     });
     
+    const resetPasswordBtn = document.getElementById('reset-password-btn');
+    if (resetPasswordBtn) {
+        resetPasswordBtn.addEventListener('click', () => {
+            const adminPassword = prompt('Enter admin password to reset this team\'s protection password:');
+            if (adminPassword === null) return; // User cancelled
+            
+            // Simple admin password check - you can customize this
+            if (adminPassword === 'admin123') {
+                if (confirm(`Reset password for ${ownerName}? This will require them to set a new password.`)) {
+                    const protectionData = state.protections[state.selectedOwner];
+                    if (protectionData) {
+                        // Keep their protected players but clear the password
+                        state.protections[state.selectedOwner] = {
+                            players: Array.isArray(protectionData) ? protectionData : (protectionData.players || []),
+                            _locked: false,
+                            _password: null
+                        };
+                        saveProtections(state.protections);
+                        alert(`Password reset for ${ownerName}! They can now set a new password.`);
+                        renderProtectView(container);
+                    } else {
+                        alert('No protections found for this team.');
+                    }
+                }
+            } else {
+                alert('Incorrect admin password.');
+            }
+        });
+    }
+    
+    document.getElementById('reset-password-btn').addEventListener('click', () => {
+        const adminPassword = prompt('Enter admin password to reset this team\'s protection password:');
+        if (adminPassword === null) return; // User cancelled
+        
+        // Simple admin password check - you can customize this
+        if (adminPassword === 'admin123') {
+            if (confirm(`Reset password for ${ownerName}? This will require them to set a new password.`)) {
+                const protectionData = state.protections[state.selectedOwner];
+                if (protectionData) {
+                    // Keep their protected players but clear the password
+                    state.protections[state.selectedOwner] = {
+                        players: Array.isArray(protectionData) ? protectionData : (protectionData.players || []),
+                        _locked: false,
+                        _password: null
+                    };
+                    saveProtections(state.protections);
+                    alert(`Password reset for ${ownerName}! They can now set a new password.`);
+                    renderProtectView(container);
+                } else {
+                    alert('No protections found for this team.');
+                }
+            }
+        } else {
+            alert('Incorrect admin password.');
+        }
+    });
+    
     // Update countdown every second if not locked
     if (!protectionsLocked) {
         const countdownInterval = setInterval(() => {
@@ -618,9 +678,8 @@ function renderProtectView(container) {
         });
     }
 
-    if (isLocked) return;
-    
-    if (protectionsLocked) return;
+    // Update countdown timer on the owner select screen
+    if (!state.selectedOwner) return;
 
     const protectRadio = document.getElementById('protect-radio');
     const disperseRadio = document.getElementById('disperse-radio');
