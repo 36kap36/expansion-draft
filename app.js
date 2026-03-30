@@ -71,9 +71,34 @@ function isDraftComplete() {
     return state.currentPick >= maxPicks;
 }
 
-// Check if protections are locked (after April 1st 11:59 PM ET)
-function areProtectionsLocked() {
-    return new Date() >= PROTECTIONS_LOCK_TIME;
+// Update player table visibility based on search term without full re-render
+function updatePlayerTableSearch(playerPool) {
+    const rows = document.querySelectorAll('[data-player-id]');
+    let visibleCount = 0;
+    
+    rows.forEach(row => {
+        const playerName = row.textContent;
+        const matches = fuzzyMatch(playerName, state.searchTerm);
+        row.style.display = matches ? '' : 'none';
+        if (matches) visibleCount++;
+    });
+    
+    // Show "no results" message if needed
+    const tableBody = document.querySelector('tbody');
+    if (tableBody && visibleCount === 0 && state.searchTerm) {
+        let noResultsRow = document.getElementById('no-results-row');
+        if (!noResultsRow) {
+            noResultsRow = document.createElement('tr');
+            noResultsRow.id = 'no-results-row';
+            noResultsRow.innerHTML = `<td colspan="7" style="text-align: center; color: #94a3b8; padding: 2rem;">No players match "${state.searchTerm}"</td>`;
+            tableBody.appendChild(noResultsRow);
+        } else {
+            noResultsRow.innerHTML = `<td colspan="7" style="text-align: center; color: #94a3b8; padding: 2rem;">No players match "${state.searchTerm}"</td>`;
+        }
+    } else if (visibleCount > 0) {
+        const noResultsRow = document.getElementById('no-results-row');
+        if (noResultsRow) noResultsRow.remove();
+    }
 }
 
 // Get time remaining until protections lock
@@ -1155,7 +1180,7 @@ function setupDraftEventListeners(container, playerPool) {
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
             state.searchTerm = e.target.value;
-            renderDraftView(container);
+            updatePlayerTableSearch(playerPool);
         });
     }
     
