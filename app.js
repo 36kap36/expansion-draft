@@ -26,20 +26,10 @@ function getMaxPicksPerTeam() {
     return 3 + (state.dispersed.size * 2);
 }
 
-// Fuzzy search: checks if search term matches player name (case insensitive)
+// Substring search: checks if search term appears consecutively in player name (case insensitive)
 function fuzzyMatch(playerName, searchTerm) {
     if (!searchTerm) return true;
-    
-    const search = searchTerm.toLowerCase();
-    const name = playerName.toLowerCase();
-    
-    let searchIdx = 0;
-    for (let i = 0; i < name.length && searchIdx < search.length; i++) {
-        if (name[i] === search[searchIdx]) {
-            searchIdx++;
-        }
-    }
-    return searchIdx === search.length;
+    return playerName.toLowerCase().includes(searchTerm.toLowerCase());
 }
 
 // Check if draft has started
@@ -116,6 +106,11 @@ function getCountdownToProtectionsLock() {
     const seconds = Math.floor((diff % (1000 * 60)) / 1000);
     
     return { days, hours, minutes, seconds, locked: false };
+}
+
+// Check if protections are locked (after April 1st 11:59 PM ET)
+function areProtectionsLocked() {
+    return new Date() >= PROTECTIONS_LOCK_TIME;
 }
 
 let state = {
