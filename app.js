@@ -16,8 +16,12 @@ const POSITION_LIMITS = {
 
 const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DL", "DE", "LB", "DB"];
 const ROSTER_SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "FLEX", "SUPERFLEX", "K", "DL", "LB", "DB"];
-const MAX_FROM_EACH_TEAM = 3;
 const PICK_TIME_LIMIT = 600;
+
+// Base max picks per team is 3; increases by 2 for each dispersed team
+function getMaxPicksPerTeam() {
+    return 3 + (state.dispersed.size * 2);
+}
 
 let state = {
     leagueData: null,
@@ -756,7 +760,7 @@ function renderTableView(container, filtered, currentDrafter) {
                     </thead>
                     <tbody>
                         ${filtered.map(player => {
-                            const canDraft = getTeamPicksCount(player.originalOwnerId) < MAX_FROM_EACH_TEAM;
+                            const canDraft = getTeamPicksCount(player.originalOwnerId) < getMaxPicksPerTeam();
                             const isSelected = state.selectedPlayer?.playerId === player.playerId;
                             return `
                                 <tr class="${isSelected ? 'selected' : ''}" data-player-id="${player.playerId}" data-owner-id="${player.originalOwnerId}"
@@ -857,7 +861,7 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                             </thead>
                             <tbody>
                                 ${(state.positionFilter === 'ALL' ? availablePlayers : availablePlayers.filter(p => p.position === state.positionFilter)).map(player => {
-                                    const canDraft = getTeamPicksCount(player.originalOwnerId) < MAX_FROM_EACH_TEAM;
+                                    const canDraft = getTeamPicksCount(player.originalOwnerId) < getMaxPicksPerTeam();
                                     const isSelected = state.selectedPlayer?.playerId === player.playerId;
                                     return `
                                         <tr class="${isSelected ? 'selected' : ''}" data-player-id="${player.playerId}" data-owner-id="${player.originalOwnerId}"
@@ -1013,6 +1017,13 @@ function getAvailablePlayers() {
     const draftedIds = new Set(state.draftPicks.map(p => p.playerId));
     const pool = [];
     
+    // Get all rostered players
+    const rosteredPlayerIds = new Set();
+    state.leagueData.rosters.forEach(roster => {
+        (roster.players || []).forEach(pid => rosteredPlayerIds.add(pid));
+    });
+    
+    // Add rostered players (existing logic)
     state.leagueData.rosters.forEach(roster => {
         const ownerId = roster.owner_id;
         const isDispersed = state.dispersed.has(ownerId);
@@ -1044,6 +1055,27 @@ function getAvailablePlayers() {
         });
     });
     
+    // Add free agents (not on any roster)
+    Object.entries(state.leagueData.players).forEach(([playerId, player]) => {
+        if (!rosteredPlayerIds.has(playerId) && !draftedIds.has(playerId)) {
+            // Only include NFL players (exclude practice squad, retired, etc.)
+            if (player.active && player.team && player.team !== 'None') {
+                const ranking = state.rankings[playerId] || { overallRank: 9999, posRank: 999 };
+                
+                pool.push({
+                    playerId,
+                    name: player.full_name || playerId,
+                    position: player.position || '?',
+                    team: player.team || 'FA',
+                    originalOwnerId: null,
+                    ownerName: 'Free Agent',
+                    overallRank: ranking.overallRank,
+                    posRank: ranking.posRank
+                });
+            }
+        }
+    });
+    
     return pool.sort((a, b) => a.overallRank - b.overallRank);
 }
 
@@ -1064,13 +1096,14 @@ function getTeamRoster(teamId) {
 }
 
 function getTeamPicksCount(ownerId) {
+    if (!ownerId || ownerId === 'FA') return 0; // Free agents don't count toward team limits
     return state.draftPicks.filter(p => p.originalOwnerId === ownerId).length;
 }
 
 function makeDraftPick(player) {
     const pick = {
         playerId: player.playerId,
-        originalOwnerId: player.originalOwnerId,
+        originalOwnerId: player.originalOwnerId || 'FA', // Handle free agents
         teamId: getCurrentDrafter(),
         pickNumber: state.currentPick + 1
     };
