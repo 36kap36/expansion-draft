@@ -32,9 +32,9 @@ function fuzzyMatch(playerName, searchTerm) {
     return playerName.toLowerCase().includes(searchTerm.toLowerCase());
 }
 
-// Check if draft has started
+// Check if draft has started (either naturally or by admin)
 function isDraftStarted() {
-    return new Date() >= DRAFT_START_TIME;
+    return state.draftStartedByAdmin || new Date() >= DRAFT_START_TIME;
 }
 
 // Get time remaining until draft starts (returns object with days, hours, minutes, seconds)
@@ -130,7 +130,8 @@ let state = {
     selectedOwner: null,
     selectedPlayers: [],
     ownerChoice: {},
-    draftView: 'table'
+    draftView: 'table',
+    adminAuthenticated: false
 };
 
 async function init() {
@@ -985,11 +986,35 @@ function renderTableView(container, filtered, currentDrafter) {
     const countdown = getCountdownToDraftStart();
     
     let statusHTML = '';
-    if (!draftStarted) {
+    let adminHTML = '';
+    
+    if (!state.adminAuthenticated) {
+        adminHTML = `
+            <div style="margin-bottom: 1rem;">
+                <button class="btn btn-primary" id="admin-login-btn" style="font-size: 0.875rem; padding: 0.5rem 1rem;">🔐 Admin Login</button>
+            </div>
+        `;
+    } else {
+        adminHTML = `
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <p>✓ Admin authenticated. You can now manage the draft.</p>
+                <button class="btn btn-danger" id="admin-logout-btn" style="margin-top: 0.5rem; padding: 0.5rem 1rem; font-size: 0.875rem;">Logout</button>
+            </div>
+        `;
+    }
+    
+    if (!draftStarted && !state.adminAuthenticated) {
         statusHTML = `
             <div class="warning-box" style="margin-bottom: 1rem;">
                 <p><strong>Draft starts in:</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s</p>
                 <p style="margin-top: 0.5rem; font-size: 0.875rem;">April 10th, 2026 at 7:00 PM ET</p>
+            </div>
+        `;
+    } else if (!draftStarted && state.adminAuthenticated) {
+        statusHTML = `
+            <div class="warning-box" style="margin-bottom: 1rem;">
+                <p><strong>Draft has not started yet.</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s remaining</p>
+                <button class="btn btn-success" id="admin-start-draft-btn" style="margin-top: 0.5rem;">▶️ Start Draft Now (Admin)</button>
             </div>
         `;
     } else if (draftComplete) {
@@ -1002,6 +1027,7 @@ function renderTableView(container, filtered, currentDrafter) {
     
     container.innerHTML = `
         <div class="card">
+            ${adminHTML}
             ${statusHTML}
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <div class="draft-header" style="margin-bottom: 0;">
@@ -1015,6 +1041,7 @@ function renderTableView(container, filtered, currentDrafter) {
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
                     <button class="btn btn-secondary" id="toggle-view-btn">📋 Roster View</button>
+                    ${state.adminAuthenticated ? `<button class="btn btn-danger" id="admin-reset-draft-btn">🔄 Reset Draft (Admin)</button>` : ''}
                     <button class="btn btn-danger" id="reset-btn">Reset Draft</button>
                 </div>
             </div>
@@ -1104,11 +1131,35 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
     const countdown = getCountdownToDraftStart();
     
     let statusHTML = '';
-    if (!draftStarted) {
+    let adminHTML = '';
+    
+    if (!state.adminAuthenticated) {
+        adminHTML = `
+            <div style="margin-bottom: 1rem;">
+                <button class="btn btn-primary" id="admin-login-btn" style="font-size: 0.875rem; padding: 0.5rem 1rem;">🔐 Admin Login</button>
+            </div>
+        `;
+    } else {
+        adminHTML = `
+            <div class="info-box" style="margin-bottom: 1rem;">
+                <p>✓ Admin authenticated. You can now manage the draft.</p>
+                <button class="btn btn-danger" id="admin-logout-btn" style="margin-top: 0.5rem; padding: 0.5rem 1rem; font-size: 0.875rem;">Logout</button>
+            </div>
+        `;
+    }
+    
+    if (!draftStarted && !state.adminAuthenticated) {
         statusHTML = `
             <div class="warning-box" style="margin-bottom: 1rem;">
                 <p><strong>Draft starts in:</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s</p>
                 <p style="margin-top: 0.5rem; font-size: 0.875rem;">April 10th, 2026 at 7:00 PM ET</p>
+            </div>
+        `;
+    } else if (!draftStarted && state.adminAuthenticated) {
+        statusHTML = `
+            <div class="warning-box" style="margin-bottom: 1rem;">
+                <p><strong>Draft has not started yet.</strong> ${countdown.days}d ${countdown.hours}h ${countdown.minutes}m ${countdown.seconds}s remaining</p>
+                <button class="btn btn-success" id="admin-start-draft-btn" style="margin-top: 0.5rem;">▶️ Start Draft Now (Admin)</button>
             </div>
         `;
     } else if (draftComplete) {
@@ -1121,6 +1172,7 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
 
     container.innerHTML = `
         <div class="card">
+            ${adminHTML}
             ${statusHTML}
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <div class="draft-header" style="margin-bottom: 0;">
@@ -1134,6 +1186,7 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
                     <button class="btn btn-secondary" id="toggle-view-btn">📊 Table View</button>
+                    ${state.adminAuthenticated ? `<button class="btn btn-danger" id="admin-reset-draft-btn">🔄 Reset Draft (Admin)</button>` : ''}
                     <button class="btn btn-danger" id="reset-btn">Reset Draft</button>
                 </div>
             </div>
@@ -1230,6 +1283,69 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
 }
 
 function setupDraftEventListeners(container, playerPool) {
+    // Admin login
+    const adminLoginBtn = document.getElementById('admin-login-btn');
+    if (adminLoginBtn) {
+        adminLoginBtn.addEventListener('click', () => {
+            const password = prompt('Enter admin password:');
+            if (password === null) return; // Cancelled
+            
+            if (password === 'admin123') {
+                state.adminAuthenticated = true;
+                renderDraftView(container);
+            } else {
+                alert('Incorrect password.');
+            }
+        });
+    }
+    
+    // Admin logout
+    const adminLogoutBtn = document.getElementById('admin-logout-btn');
+    if (adminLogoutBtn) {
+        adminLogoutBtn.addEventListener('click', () => {
+            state.adminAuthenticated = false;
+            renderDraftView(container);
+        });
+    }
+    
+    // Admin start draft
+    const adminStartDraftBtn = document.getElementById('admin-start-draft-btn');
+    if (adminStartDraftBtn) {
+        adminStartDraftBtn.addEventListener('click', () => {
+            if (state.draftOrder.length === 0) {
+                alert('Cannot start draft: No teams in draft order.');
+                return;
+            }
+            if (confirm('Start the draft now? This cannot be undone.')) {
+                // Draft is now considered started by admin
+                // Update time to simulate start
+                const newStartTime = new Date();
+                newStartTime.setSeconds(newStartTime.getSeconds() - 1);
+                // We'll mark it as started by setting a flag
+                state.draftStartedByAdmin = true;
+                renderDraftView(container);
+            }
+        });
+    }
+    
+    // Admin reset draft
+    const adminResetDraftBtn = document.getElementById('admin-reset-draft-btn');
+    if (adminResetDraftBtn) {
+        adminResetDraftBtn.addEventListener('click', () => {
+            if (confirm('Reset the entire draft AND re-lock it? This will clear all picks and return the draft to locked status.')) {
+                state.draftPicks = [];
+                state.currentPick = 0;
+                state.timeRemaining = PICK_TIME_LIMIT;
+                state.selectedPlayer = null;
+                state.draftStartedByAdmin = false;
+                saveDraftPicks([]);
+                stopTimer();
+                renderDraftView(container);
+                alert('Draft has been reset and re-locked.');
+            }
+        });
+    }
+    
     const searchInput = document.getElementById('player-search');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
@@ -1437,8 +1553,8 @@ function getTeamPicksCount(ownerId) {
 }
 
 function makeDraftPick(player) {
-    // Check if draft has started
-    if (!isDraftStarted()) {
+    // Check if draft has started or admin override
+    if (!isDraftStarted() && !state.adminAuthenticated) {
         alert('Draft has not started yet. Please wait until April 10th at 7:00 PM ET.');
         return;
     }
