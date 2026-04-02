@@ -906,7 +906,6 @@ function renderLeagueView(container) {
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h2 class="card-title"><span>🏈</span> League Rosters</h2>
-                <button class="btn btn-primary" id="refresh-rosters-btn" style="font-size: 0.875rem; padding: 0.5rem 1rem;">🔄 Refresh Rosters</button>
             </div>
         </div>
         ${state.leagueData.rosters.map(roster => {
@@ -971,24 +970,7 @@ function renderLeagueView(container) {
         }).join('')}
     `;
     
-    // Add event listener for refresh button
-    document.getElementById('refresh-rosters-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('refresh-rosters-btn');
-        btn.disabled = true;
-        btn.textContent = '⏳ Loading...';
-        
-        try {
-            const newLeagueData = await fetchLeagueData();
-            state.leagueData = newLeagueData;
-            renderView('league');
-            console.log('Rosters refreshed successfully');
-        } catch (error) {
-            console.error('Error refreshing rosters:', error);
-            alert('Failed to refresh rosters. Please try again.');
-            btn.disabled = false;
-            btn.textContent = '🔄 Refresh Rosters';
-        }
-    });
+
 }
 
 function renderDraftView(container) {
@@ -1606,9 +1588,10 @@ function makeDraftPick(player) {
 }
 
 function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 function startTimer() {
