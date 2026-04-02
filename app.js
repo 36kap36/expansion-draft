@@ -1542,6 +1542,7 @@ function fillRosterSlots(picks) {
 function getAvailablePlayers() {
     const draftedIds = new Set(state.draftPicks.map(p => p.playerId));
     const pool = [];
+    const addedPlayerIds = new Set(); // Track already-added players to prevent duplicates
     
     // Get all rostered players
     const rosteredPlayerIds = new Set();
@@ -1563,27 +1564,32 @@ function getAvailablePlayers() {
         }
         
         (roster.players || []).forEach(playerId => {
-            if (!draftedIds.has(playerId) && !protectedIds.includes(playerId)) {
-                const player = state.leagueData.players[playerId] || {};
-                const ranking = state.rankings[playerId] || { overallRank: 9999, posRank: 999 };
-                
-                pool.push({
-                    playerId,
-                    name: player.full_name || playerId,
-                    position: player.position || '?',
-                    team: player.team || 'FA',
-                    originalOwnerId: ownerId,
-                    ownerName: state.leagueData.ownerMap[ownerId],
-                    overallRank: ranking.overallRank,
-                    posRank: ranking.posRank
-                });
+            // Skip if already added, drafted, or protected
+            if (addedPlayerIds.has(playerId) || draftedIds.has(playerId) || protectedIds.includes(playerId)) {
+                return;
             }
+            
+            const player = state.leagueData.players[playerId] || {};
+            const ranking = state.rankings[playerId] || { overallRank: 9999, posRank: 999 };
+            
+            pool.push({
+                playerId,
+                name: player.full_name || playerId,
+                position: player.position || '?',
+                team: player.team || 'FA',
+                originalOwnerId: ownerId,
+                ownerName: state.leagueData.ownerMap[ownerId],
+                overallRank: ranking.overallRank,
+                posRank: ranking.posRank
+            });
+            
+            addedPlayerIds.add(playerId);
         });
     });
     
     // Add free agents (not on any roster)
     Object.entries(state.leagueData.players).forEach(([playerId, player]) => {
-        if (!rosteredPlayerIds.has(playerId) && !draftedIds.has(playerId)) {
+        if (!addedPlayerIds.has(playerId) && !rosteredPlayerIds.has(playerId) && !draftedIds.has(playerId)) {
             // Only include NFL players (exclude practice squad, retired, etc.)
             if (player.active && player.team && player.team !== 'None') {
                 const ranking = state.rankings[playerId] || { overallRank: 9999, posRank: 999 };
@@ -1598,6 +1604,8 @@ function getAvailablePlayers() {
                     overallRank: ranking.overallRank,
                     posRank: ranking.posRank
                 });
+                
+                addedPlayerIds.add(playerId);
             }
         }
     });
@@ -1656,9 +1664,10 @@ function makeDraftPick(player) {
 }
 
 function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 function startTimer() {
