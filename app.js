@@ -6,6 +6,7 @@ import {
     saveDraftOrder, loadDraftOrder,
     saveDraftPicks, loadDraftPicks,
     saveDispersed, loadDispersed,
+    saveRosters, loadRosters,
     resetAllData
 } from './storage.js';
 import { listenToFirebase } from './firebase.js';
@@ -177,6 +178,15 @@ async function init() {
             if (dispersedArray) {
                 state.dispersed = new Set(dispersedArray);
                 if (state.currentView === 'setup' || state.currentView === 'league' || state.currentView === 'draft') {
+                    renderView(state.currentView);
+                }
+            }
+        });
+        
+        listenToFirebase('rosters', (rosters) => {
+            if (rosters) {
+                state.leagueData.rosters = rosters;
+                if (state.currentView === 'league' || state.currentView === 'draft' || state.currentView === 'setup') {
                     renderView(state.currentView);
                 }
             }
@@ -1699,6 +1709,10 @@ function startRosterRefresh() {
                 console.log('Rosters updated - trade detected');
                 state.leagueData = newLeagueData;
                 
+                // Save the updated rosters to Firebase to persist trades
+                await saveRosters(state.leagueData.rosters);
+                console.log('Trade persisted to Firebase');
+                
                 // Re-render if viewing league view
                 if (state.currentView === 'league') {
                     renderView('league');
@@ -1746,6 +1760,13 @@ window.fixTrade = function(ownerIdGiving, playerIdsGiving, ownerIdReceiving, pla
             rosterReceiving.players.push(pid);
             console.log(`Added player ${pid} to ${state.leagueData.ownerMap[ownerIdReceiving]}`);
         }
+    });
+    
+    // Save the corrected rosters to Firebase
+    saveRosters(state.leagueData.rosters).then(() => {
+        console.log('✓ Trade fix saved to Firebase!');
+    }).catch(err => {
+        console.error('Failed to save trade fix:', err);
     });
     
     // Stop auto-refresh to prevent overwriting this fix

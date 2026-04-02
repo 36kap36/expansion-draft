@@ -4,7 +4,8 @@ const STORAGE_KEYS = {
     PROTECTIONS: 'protections',
     DRAFT_ORDER: 'draft_order',
     DRAFT_PICKS: 'draft_picks',
-    DISPERSED: 'dispersed'
+    DISPERSED: 'dispersed',
+    ROSTERS: 'rosters'
 };
 
 export async function saveProtections(protections) {
@@ -48,4 +49,13 @@ export async function resetAllData() {
     await saveDraftOrder([]);
     await saveDraftPicks([]);
     await saveDispersed([]);
+}
+
+export async function saveRosters(rosters) {
+    await saveToFirebase(STORAGE_KEYS.ROSTERS, rosters);
+}
+
+export async function loadRosters() {
+    const data = await loadFromFirebase(STORAGE_KEYS.ROSTERS);
+    return data || null;
 }
