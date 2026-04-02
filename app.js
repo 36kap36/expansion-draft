@@ -19,7 +19,7 @@ const ROSTER_SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "FLEX"
 const PICK_TIME_LIMIT = 43200; // 12 hours in seconds
 const DRAFT_START_TIME = new Date('2026-04-10T23:00:00Z'); // April 10th, 7 PM Eastern (11 PM UTC)
 const MAX_DRAFT_ROUNDS = 12;
-const PROTECTIONS_LOCK_TIME = new Date('2026-04-02T03:59:00Z'); // April 1st, 11:59 PM ET (3:59 AM UTC next day)
+const PROTECTIONS_LOCK_TIME = new Date('2026-04-03T03:59:00Z'); // April 1st, 11:59 PM ET (3:59 AM UTC next day)
 
 // Base max picks per team is 3; increases by 2 for each dispersed team
 function getMaxPicksPerTeam() {
