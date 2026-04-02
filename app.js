@@ -146,6 +146,12 @@ async function init() {
         const dispersedArray = await loadDispersed();
         state.dispersed = new Set(dispersedArray);
         
+        // Load league data from API first
+        state.leagueData = await fetchLeagueData();
+        state.rankings = await fetchFantasyCalcRankings();
+        state.currentPick = state.draftPicks.length;
+        
+        // Set up Firebase listeners for real-time updates
         listenToFirebase('protections', (protections) => {
             if (protections) {
                 state.protections = protections;
@@ -183,18 +189,22 @@ async function init() {
             }
         });
         
+        // Load saved rosters from Firebase (these may have manual fixes applied)
+        const savedRosters = await loadRosters();
+        if (savedRosters) {
+            console.log('Loaded rosters from Firebase (may include manual fixes)');
+            state.leagueData.rosters = savedRosters;
+        }
+        
         listenToFirebase('rosters', (rosters) => {
             if (rosters) {
+                console.log('Rosters updated from Firebase listener');
                 state.leagueData.rosters = rosters;
                 if (state.currentView === 'league' || state.currentView === 'draft' || state.currentView === 'setup') {
                     renderView(state.currentView);
                 }
             }
         });
-        
-        state.leagueData = await fetchLeagueData();
-        state.rankings = await fetchFantasyCalcRankings();
-        state.currentPick = state.draftPicks.length;
         
         // Start periodic roster refresh to detect trades
         startRosterRefresh();
@@ -1686,17 +1696,8 @@ function startRosterRefresh() {
             const hasChanges = JSON.stringify(state.leagueData.rosters) !== JSON.stringify(newLeagueData.rosters);
             
             if (hasChanges) {
-                console.log('Rosters updated - trade detected');
-                state.leagueData = newLeagueData;
-                
-                // Save the updated rosters to Firebase to persist trades
-                await saveRosters(state.leagueData.rosters);
-                console.log('Trade persisted to Firebase');
-                
-                // Re-render if viewing league view
-                if (state.currentView === 'league') {
-                    renderView('league');
-                }
+                console.log('⚠️ Roster changes detected in API but NOT auto-saving to Firebase');
+                console.log('To preserve manual fixes, rosters must be manually corrected via fixTrade() in console');
             }
         } catch (error) {
             console.error('Error refreshing rosters:', error);
