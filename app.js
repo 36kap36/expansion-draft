@@ -974,23 +974,34 @@ function renderLeagueView(container) {
     `;
     
     // Add event listener for refresh button
-    document.getElementById('refresh-rosters-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('refresh-rosters-btn');
-        btn.disabled = true;
-        btn.textContent = '⏳ Loading...';
-        
-        try {
-            const newLeagueData = await fetchLeagueData();
-            state.leagueData = newLeagueData;
-            renderView('league');
-            console.log('Rosters refreshed successfully');
-        } catch (error) {
-            console.error('Error refreshing rosters:', error);
-            alert('Failed to refresh rosters. Please try again.');
-            btn.disabled = false;
-            btn.textContent = '🔄 Refresh Rosters';
+    const refreshBtn = document.getElementById('refresh-rosters-btn');
+    if (refreshBtn) {
+        const protectionsLocked = areProtectionsLocked();
+        if (protectionsLocked) {
+            refreshBtn.disabled = true;
+            refreshBtn.title = 'Roster refresh disabled after protections lock';
+            refreshBtn.style.opacity = '0.5';
+            refreshBtn.style.cursor = 'not-allowed';
+        } else {
+            refreshBtn.addEventListener('click', async () => {
+                const btn = document.getElementById('refresh-rosters-btn');
+                btn.disabled = true;
+                btn.textContent = '⏳ Loading...';
+                
+                try {
+                    const newLeagueData = await fetchLeagueData();
+                    state.leagueData = newLeagueData;
+                    renderView('league');
+                    console.log('Rosters refreshed successfully');
+                } catch (error) {
+                    console.error('Error refreshing rosters:', error);
+                    alert('Failed to refresh rosters. Please try again.');
+                    btn.disabled = false;
+                    btn.textContent = '🔄 Refresh Rosters';
+                }
+            });
         }
-    });
+    }
 }
 
 function renderDraftView(container) {
@@ -1636,8 +1647,21 @@ function stopTimer() {
 }
 
 function startRosterRefresh() {
+    // Stop refreshing after protections lock to prevent stale data from overwriting manual fixes
+    if (areProtectionsLocked()) {
+        console.log('Protections locked - stopping roster refresh');
+        return;
+    }
+    
     // Refresh rosters every 30 seconds to detect trades
     state.rosterRefreshInterval = setInterval(async () => {
+        // Stop if protections have been locked
+        if (areProtectionsLocked()) {
+            console.log('Protections locked - stopping roster refresh');
+            stopRosterRefresh();
+            return;
+        }
+        
         try {
             const newLeagueData = await fetchLeagueData();
             
@@ -1665,5 +1689,48 @@ function stopRosterRefresh() {
         state.rosterRefreshInterval = null;
     }
 }
+
+// Manual roster correction function - call from browser console to fix trades before API syncs
+// Example: fixTrade('869274882519756800', [12506], '869279722469752832', [8183, 2216])
+window.fixTrade = function(ownerIdGiving, playerIdsGiving, ownerIdReceiving, playerIdsReceiving) {
+    console.log(`Fixing trade: Owner ${ownerIdGiving} -> ${playerIdsGiving} to Owner ${ownerIdReceiving}`);
+    
+    // Find rosters by owner ID
+    const rosterGiving = state.leagueData.rosters.find(r => r.owner_id === ownerIdGiving);
+    const rosterReceiving = state.leagueData.rosters.find(r => r.owner_id === ownerIdReceiving);
+    
+    if (!rosterGiving || !rosterReceiving) {
+        console.error('Could not find one or both rosters');
+        return;
+    }
+    
+    // Remove players from giving owner
+    playerIdsGiving.forEach(pid => {
+        const idx = rosterGiving.players.indexOf(pid);
+        if (idx > -1) {
+            rosterGiving.players.splice(idx, 1);
+            console.log(`Removed player ${pid} from ${state.leagueData.ownerMap[ownerIdGiving]}`);
+        }
+    });
+    
+    // Add players to receiving owner
+    playerIdsReceiving.forEach(pid => {
+        if (!rosterReceiving.players.includes(pid)) {
+            rosterReceiving.players.push(pid);
+            console.log(`Added player ${pid} to ${state.leagueData.ownerMap[ownerIdReceiving]}`);
+        }
+    });
+    
+    // Stop auto-refresh to prevent overwriting this fix
+    stopRosterRefresh();
+    console.log('⚠️ Auto-refresh stopped to preserve manual fix');
+    
+    // Re-render if viewing league view
+    if (state.currentView === 'league') {
+        renderView('league');
+    }
+    
+    console.log('✓ Trade fix applied! Rosters have been updated.');
+};
 
 init();                
