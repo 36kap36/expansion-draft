@@ -1808,4 +1808,20 @@ window.fixTrade = async function(ownerIdGiving, playerIdsGiving, ownerIdReceivin
     console.log('✓ Trade fix applied! Rosters have been updated.');
 };
 
+// Refresh state from Firebase - use this after fixTrade if changes don't appear
+window.refreshStateFromFirebase = async function() {
+    console.log('Refreshing all state from Firebase...');
+    state.protections = await loadProtections();
+    state.draftPicks = await loadDraftPicks();
+    state.draftOrder = await loadDraftOrder();
+    const dispersedArray = await loadDispersed();
+    state.dispersed = new Set(dispersedArray);
+    const rosters = await loadRosters();
+    if (rosters) {
+        state.leagueData.rosters = rosters;
+    }
+    console.log('✓ State refreshed from Firebase');
+    renderView(state.currentView);
+};
+
 init();                
