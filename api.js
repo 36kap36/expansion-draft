@@ -1,4 +1,4 @@
-const LEAGUE_ID = "1180223058695053312";
+const LEAGUE_ID = "1326962570912874496";
 const BASE_URL = "https://api.sleeper.app/v1";
 
 export async function fetchLeagueData() {
