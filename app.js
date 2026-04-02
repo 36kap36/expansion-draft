@@ -1714,8 +1714,15 @@ function stopRosterRefresh() {
 
 // Manual roster correction function - call from browser console to fix trades before API syncs
 // Example: fixTrade('869274882519756800', [12506], '869279722469752832', [8183, 2216])
-window.fixTrade = function(ownerIdGiving, playerIdsGiving, ownerIdReceiving, playerIdsReceiving) {
+window.fixTrade = async function(ownerIdGiving, playerIdsGiving, ownerIdReceiving, playerIdsReceiving) {
     console.log(`Fixing trade: Owner ${ownerIdGiving} -> ${playerIdsGiving} to Owner ${ownerIdReceiving}`);
+    
+    // Reload current rosters from Firebase to ensure we're working with latest data
+    const freshRosters = await loadRosters();
+    if (freshRosters) {
+        console.log('Loaded fresh rosters from Firebase');
+        state.leagueData.rosters = freshRosters;
+    }
     
     // Find rosters by owner ID
     const rosterGiving = state.leagueData.rosters.find(r => r.owner_id === ownerIdGiving);
