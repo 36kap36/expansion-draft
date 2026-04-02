@@ -131,7 +131,8 @@ let state = {
     selectedPlayers: [],
     ownerChoice: {},
     draftView: 'table',
-    adminAuthenticated: false
+    adminAuthenticated: false,
+    rosterRefreshInterval: null
 };
 
 async function init() {
@@ -157,6 +158,9 @@ async function init() {
         state.leagueData = await fetchLeagueData();
         state.rankings = await fetchFantasyCalcRankings();
         state.currentPick = state.draftPicks.length;
+        
+        // Start periodic roster refresh to detect trades
+        startRosterRefresh();
         
         state.leagueData.rosters.forEach(r => {
             const ownerId = r.owner_id;
@@ -902,7 +906,10 @@ function renderLeagueView(container) {
 
     container.innerHTML = `
         <div class="card">
-            <h2 class="card-title"><span>🏈</span> League Rosters</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 class="card-title"><span>🏈</span> League Rosters</h2>
+                <button class="btn btn-primary" id="refresh-rosters-btn" style="font-size: 0.875rem; padding: 0.5rem 1rem;">🔄 Refresh Rosters</button>
+            </div>
         </div>
         ${state.leagueData.rosters.map(roster => {
             const ownerId = roster.owner_id;
@@ -965,6 +972,25 @@ function renderLeagueView(container) {
             `;
         }).join('')}
     `;
+    
+    // Add event listener for refresh button
+    document.getElementById('refresh-rosters-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('refresh-rosters-btn');
+        btn.disabled = true;
+        btn.textContent = '⏳ Loading...';
+        
+        try {
+            const newLeagueData = await fetchLeagueData();
+            state.leagueData = newLeagueData;
+            renderView('league');
+            console.log('Rosters refreshed successfully');
+        } catch (error) {
+            console.error('Error refreshing rosters:', error);
+            alert('Failed to refresh rosters. Please try again.');
+            btn.disabled = false;
+            btn.textContent = '🔄 Refresh Rosters';
+        }
+    });
 }
 
 function renderDraftView(container) {
@@ -1606,6 +1632,37 @@ function stopTimer() {
     if (state.timerInterval) {
         clearInterval(state.timerInterval);
         state.timerInterval = null;
+    }
+}
+
+function startRosterRefresh() {
+    // Refresh rosters every 30 seconds to detect trades
+    state.rosterRefreshInterval = setInterval(async () => {
+        try {
+            const newLeagueData = await fetchLeagueData();
+            
+            // Compare rosters to detect if a trade occurred
+            const hasChanges = JSON.stringify(state.leagueData.rosters) !== JSON.stringify(newLeagueData.rosters);
+            
+            if (hasChanges) {
+                console.log('Rosters updated - trade detected');
+                state.leagueData = newLeagueData;
+                
+                // Re-render if viewing league view
+                if (state.currentView === 'league') {
+                    renderView('league');
+                }
+            }
+        } catch (error) {
+            console.error('Error refreshing rosters:', error);
+        }
+    }, 30000); // Check every 30 seconds
+}
+
+function stopRosterRefresh() {
+    if (state.rosterRefreshInterval) {
+        clearInterval(state.rosterRefreshInterval);
+        state.rosterRefreshInterval = null;
     }
 }
 
