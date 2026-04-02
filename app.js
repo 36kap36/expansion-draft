@@ -151,7 +151,7 @@ async function init() {
         state.rankings = await fetchFantasyCalcRankings();
         state.currentPick = state.draftPicks.length;
         
-        // Set up Firebase listeners for real-time updates
+        // Set up Firebase listeners for other data
         listenToFirebase('protections', (protections) => {
             if (protections) {
                 state.protections = protections;
@@ -189,16 +189,16 @@ async function init() {
             }
         });
         
-        // Load saved rosters from Firebase (these may have manual fixes applied)
+        // Load saved rosters from Firebase and freeze them (no more API syncing)
         const savedRosters = await loadRosters();
         if (savedRosters) {
-            console.log('Loaded rosters from Firebase (may include manual fixes)');
+            console.log('✓ Rosters loaded from Firebase and frozen for draft');
             state.leagueData.rosters = savedRosters;
         }
         
         listenToFirebase('rosters', (rosters) => {
             if (rosters) {
-                console.log('Rosters updated from Firebase listener');
+                console.log('✓ Rosters updated via manual fix');
                 state.leagueData.rosters = rosters;
                 if (state.currentView === 'league' || state.currentView === 'draft' || state.currentView === 'setup') {
                     renderView(state.currentView);
@@ -206,8 +206,26 @@ async function init() {
             }
         });
         
+        // OLD CODE - ROSTER AUTO-SYNC (COMMENTED OUT)
+        // Uncomment below to re-enable automatic roster syncing from API
+        /*
         // Start periodic roster refresh to detect trades
         startRosterRefresh();
+        
+        state.leagueData.rosters.forEach(r => {
+            const ownerId = r.owner_id;
+            if (state.dispersed.has(ownerId)) {
+                state.ownerChoice[ownerId] = 'disperse';
+            } else if (state.protections[ownerId]) {
+                const prot = state.protections[ownerId];
+                if (Array.isArray(prot) && prot.length > 0) {
+                    state.ownerChoice[ownerId] = 'protect';
+                } else if (prot.players && prot.players.length > 0) {
+                    state.ownerChoice[ownerId] = 'protect';
+                }
+            }
+        });
+        */
         
         state.leagueData.rosters.forEach(r => {
             const ownerId = r.owner_id;
@@ -1674,6 +1692,10 @@ function stopTimer() {
 }
 
 function startRosterRefresh() {
+    // Roster refresh currently disabled - rosters are frozen after init load from Firebase
+    // Uncomment code below to re-enable 30-second roster sync from API
+    
+    /*
     // Stop refreshing after protections lock to prevent stale data from overwriting manual fixes
     if (areProtectionsLocked()) {
         console.log('Protections locked - stopping roster refresh');
@@ -1703,6 +1725,10 @@ function startRosterRefresh() {
             console.error('Error refreshing rosters:', error);
         }
     }, 30000); // Check every 30 seconds
+    */
+    
+    console.log('Roster refresh disabled - rosters frozen for draft');
+    return;
 }
 
 function stopRosterRefresh() {
