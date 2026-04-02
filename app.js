@@ -1,12 +1,9 @@
-// PART 1 OF 2 - Copy this first, then get Part 2
-
 import { fetchLeagueData, fetchFantasyCalcRankings } from './api.js';
 import { 
     saveProtections, loadProtections,
     saveDraftOrder, loadDraftOrder,
     saveDraftPicks, loadDraftPicks,
     saveDispersed, loadDispersed,
-    saveRosters, loadRosters,
     resetAllData
 } from './storage.js';
 import { listenToFirebase } from './firebase.js';
@@ -146,30 +143,6 @@ async function init() {
         const dispersedArray = await loadDispersed();
         state.dispersed = new Set(dispersedArray);
         
-        // Load league data from API first
-        state.leagueData = await fetchLeagueData();
-        state.rankings = await fetchFantasyCalcRankings();
-        state.currentPick = state.draftPicks.length;
-        
-        // Set up Firebase listeners for other data
-        listenToFirebase('protections', (protections) => {
-            if (protections) {
-                state.protections = protections;
-                if (state.currentView === 'protect' || state.currentView === 'setup') {
-                    renderView(state.currentView);
-                }
-            }
-        });
-        
-        listenToFirebase('draft_order', (order) => {
-            if (order) {
-                state.draftOrder = order;
-                if (state.currentView === 'setup' || state.currentView === 'league' || state.currentView === 'draft') {
-                    renderView(state.currentView);
-                }
-            }
-        });
-        
         listenToFirebase('draft_picks', (picks) => {
             if (picks) {
                 state.draftPicks = picks;
@@ -180,52 +153,12 @@ async function init() {
             }
         });
         
-        listenToFirebase('dispersed', (dispersedArray) => {
-            if (dispersedArray) {
-                state.dispersed = new Set(dispersedArray);
-                if (state.currentView === 'setup' || state.currentView === 'league' || state.currentView === 'draft') {
-                    renderView(state.currentView);
-                }
-            }
-        });
+        state.leagueData = await fetchLeagueData();
+        state.rankings = await fetchFantasyCalcRankings();
+        state.currentPick = state.draftPicks.length;
         
-        // Load saved rosters from Firebase and freeze them (no more API syncing)
-        const savedRosters = await loadRosters();
-        if (savedRosters) {
-            console.log('✓ Rosters loaded from Firebase and frozen for draft');
-            state.leagueData.rosters = savedRosters;
-        }
-        
-        listenToFirebase('rosters', (rosters) => {
-            if (rosters) {
-                console.log('✓ Rosters updated via manual fix');
-                state.leagueData.rosters = rosters;
-                if (state.currentView === 'protect' || state.currentView === 'league' || state.currentView === 'draft' || state.currentView === 'setup') {
-                    renderView(state.currentView);
-                }
-            }
-        });
-        
-        // OLD CODE - ROSTER AUTO-SYNC (COMMENTED OUT)
-        // Uncomment below to re-enable automatic roster syncing from API
-        /*
         // Start periodic roster refresh to detect trades
         startRosterRefresh();
-        
-        state.leagueData.rosters.forEach(r => {
-            const ownerId = r.owner_id;
-            if (state.dispersed.has(ownerId)) {
-                state.ownerChoice[ownerId] = 'disperse';
-            } else if (state.protections[ownerId]) {
-                const prot = state.protections[ownerId];
-                if (Array.isArray(prot) && prot.length > 0) {
-                    state.ownerChoice[ownerId] = 'protect';
-                } else if (prot.players && prot.players.length > 0) {
-                    state.ownerChoice[ownerId] = 'protect';
-                }
-            }
-        });
-        */
         
         state.leagueData.rosters.forEach(r => {
             const ownerId = r.owner_id;
@@ -791,16 +724,13 @@ function renderProtectView(container) {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
                 
-                const playerId = String(item.dataset.playerId);
+                const playerId = item.dataset.playerId;
                 const scrollPos = tableContainer.scrollTop;
                 
-                // Normalize all IDs to strings for comparison
-                const normalizedSelected = state.selectedPlayers.map(p => String(p));
-                
-                if (normalizedSelected.includes(playerId)) {
-                    state.selectedPlayers = state.selectedPlayers.filter(id => String(id) !== playerId);
+                if (state.selectedPlayers.includes(playerId)) {
+                    state.selectedPlayers = state.selectedPlayers.filter(id => id !== playerId);
                 } else {
-                    state.selectedPlayers.push(playerId);
+                    state.selectedPlayers = [...state.selectedPlayers, playerId];
                 }
                 
                 renderProtectView(container);
@@ -976,6 +906,7 @@ function renderLeagueView(container) {
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h2 class="card-title"><span>🏈</span> League Rosters</h2>
+                <button class="btn btn-primary" id="refresh-rosters-btn" style="font-size: 0.875rem; padding: 0.5rem 1rem;">🔄 Refresh Rosters</button>
             </div>
         </div>
         ${state.leagueData.rosters.map(roster => {
@@ -1039,6 +970,25 @@ function renderLeagueView(container) {
             `;
         }).join('')}
     `;
+    
+    // Add event listener for refresh button
+    document.getElementById('refresh-rosters-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('refresh-rosters-btn');
+        btn.disabled = true;
+        btn.textContent = '⏳ Loading...';
+        
+        try {
+            const newLeagueData = await fetchLeagueData();
+            state.leagueData = newLeagueData;
+            renderView('league');
+            console.log('Rosters refreshed successfully');
+        } catch (error) {
+            console.error('Error refreshing rosters:', error);
+            alert('Failed to refresh rosters. Please try again.');
+            btn.disabled = false;
+            btn.textContent = '🔄 Refresh Rosters';
+        }
+    });
 }
 
 function renderDraftView(container) {
@@ -1540,14 +1490,13 @@ function fillRosterSlots(picks) {
 }
 
 function getAvailablePlayers() {
-    const draftedIds = new Set(state.draftPicks.map(p => String(p.playerId)));
+    const draftedIds = new Set(state.draftPicks.map(p => p.playerId));
     const pool = [];
-    const addedPlayerIds = new Set(); // Track already-added players to prevent duplicates
     
-    // Get all rostered players - normalize IDs to strings for consistent comparison
+    // Get all rostered players
     const rosteredPlayerIds = new Set();
     state.leagueData.rosters.forEach(roster => {
-        (roster.players || []).forEach(pid => rosteredPlayerIds.add(String(pid)));
+        (roster.players || []).forEach(pid => rosteredPlayerIds.add(pid));
     });
     
     // Add rostered players (existing logic)
@@ -1558,40 +1507,33 @@ function getAvailablePlayers() {
         let protectedIds = [];
         
         if (Array.isArray(protectionData)) {
-            protectedIds = protectionData.map(p => String(p));
+            protectedIds = protectionData;
         } else if (protectionData && protectionData.players) {
-            protectedIds = protectionData.players.map(p => String(p));
+            protectedIds = protectionData.players;
         }
         
         (roster.players || []).forEach(playerId => {
-            const playerIdStr = String(playerId);
-            // Skip if already added, drafted, or protected
-            if (addedPlayerIds.has(playerIdStr) || draftedIds.has(playerIdStr) || protectedIds.includes(playerIdStr)) {
-                return;
+            if (!draftedIds.has(playerId) && !protectedIds.includes(playerId)) {
+                const player = state.leagueData.players[playerId] || {};
+                const ranking = state.rankings[playerId] || { overallRank: 9999, posRank: 999 };
+                
+                pool.push({
+                    playerId,
+                    name: player.full_name || playerId,
+                    position: player.position || '?',
+                    team: player.team || 'FA',
+                    originalOwnerId: ownerId,
+                    ownerName: state.leagueData.ownerMap[ownerId],
+                    overallRank: ranking.overallRank,
+                    posRank: ranking.posRank
+                });
             }
-            
-            const player = state.leagueData.players[playerId] || {};
-            const ranking = state.rankings[playerId] || { overallRank: 9999, posRank: 999 };
-            
-            pool.push({
-                playerId,
-                name: player.full_name || playerId,
-                position: player.position || '?',
-                team: player.team || 'FA',
-                originalOwnerId: ownerId,
-                ownerName: state.leagueData.ownerMap[ownerId],
-                overallRank: ranking.overallRank,
-                posRank: ranking.posRank
-            });
-            
-            addedPlayerIds.add(playerIdStr);
         });
     });
     
     // Add free agents (not on any roster)
     Object.entries(state.leagueData.players).forEach(([playerId, player]) => {
-        const playerIdStr = String(playerId);
-        if (!addedPlayerIds.has(playerIdStr) && !rosteredPlayerIds.has(playerIdStr) && !draftedIds.has(playerIdStr)) {
+        if (!rosteredPlayerIds.has(playerId) && !draftedIds.has(playerId)) {
             // Only include NFL players (exclude practice squad, retired, etc.)
             if (player.active && player.team && player.team !== 'None') {
                 const ranking = state.rankings[playerId] || { overallRank: 9999, posRank: 999 };
@@ -1606,8 +1548,6 @@ function getAvailablePlayers() {
                     overallRank: ranking.overallRank,
                     posRank: ranking.posRank
                 });
-                
-                addedPlayerIds.add(playerIdStr);
             }
         }
     });
@@ -1666,10 +1606,9 @@ function makeDraftPick(player) {
 }
 
 function formatTime(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
+    const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 function startTimer() {
@@ -1695,25 +1634,8 @@ function stopTimer() {
 }
 
 function startRosterRefresh() {
-    // Roster refresh currently disabled - rosters are frozen after init load from Firebase
-    // Uncomment code below to re-enable 30-second roster sync from API
-    
-    /*
-    // Stop refreshing after protections lock to prevent stale data from overwriting manual fixes
-    if (areProtectionsLocked()) {
-        console.log('Protections locked - stopping roster refresh');
-        return;
-    }
-    
     // Refresh rosters every 30 seconds to detect trades
     state.rosterRefreshInterval = setInterval(async () => {
-        // Stop if protections have been locked
-        if (areProtectionsLocked()) {
-            console.log('Protections locked - stopping roster refresh');
-            stopRosterRefresh();
-            return;
-        }
-        
         try {
             const newLeagueData = await fetchLeagueData();
             
@@ -1721,17 +1643,18 @@ function startRosterRefresh() {
             const hasChanges = JSON.stringify(state.leagueData.rosters) !== JSON.stringify(newLeagueData.rosters);
             
             if (hasChanges) {
-                console.log('⚠️ Roster changes detected in API but NOT auto-saving to Firebase');
-                console.log('To preserve manual fixes, rosters must be manually corrected via fixTrade() in console');
+                console.log('Rosters updated - trade detected');
+                state.leagueData = newLeagueData;
+                
+                // Re-render if viewing league view
+                if (state.currentView === 'league') {
+                    renderView('league');
+                }
             }
         } catch (error) {
             console.error('Error refreshing rosters:', error);
         }
     }, 30000); // Check every 30 seconds
-    */
-    
-    console.log('Roster refresh disabled - rosters frozen for draft');
-    return;
 }
 
 function stopRosterRefresh() {
@@ -1740,91 +1663,5 @@ function stopRosterRefresh() {
         state.rosterRefreshInterval = null;
     }
 }
-
-// Manual roster correction function - call from browser console to fix trades before API syncs
-// Example: fixTrade('869274882519756800', [12506], '869279722469752832', [8183, 2216])
-window.fixTrade = async function(ownerIdGiving, playerIdsGiving, ownerIdReceiving, playerIdsReceiving) {
-    console.log(`Fixing trade: Owner ${ownerIdGiving} -> ${playerIdsGiving} to Owner ${ownerIdReceiving}`);
-    
-    // Reload current rosters from Firebase to ensure we're working with latest data
-    const freshRosters = await loadRosters();
-    if (freshRosters) {
-        console.log('Loaded fresh rosters from Firebase');
-        state.leagueData.rosters = freshRosters;
-    }
-    
-    // Find rosters by owner ID
-    const rosterGiving = state.leagueData.rosters.find(r => r.owner_id === ownerIdGiving);
-    const rosterReceiving = state.leagueData.rosters.find(r => r.owner_id === ownerIdReceiving);
-    
-    if (!rosterGiving || !rosterReceiving) {
-        console.error('Could not find one or both rosters');
-        return;
-    }
-    
-    console.log(`Before: ${state.leagueData.ownerMap[ownerIdGiving]} has ${rosterGiving.players.length} players:`, rosterGiving.players);
-    console.log(`Before: ${state.leagueData.ownerMap[ownerIdReceiving]} has ${rosterReceiving.players.length} players:`, rosterReceiving.players);
-    
-    // Normalize player IDs to numbers for comparison
-    const playerIdsGivingNormalized = playerIdsGiving.map(p => Number(p));
-    const playerIdsReceivingNormalized = playerIdsReceiving.map(p => Number(p));
-    
-    // Remove players from giving owner - create new array to ensure reactivity
-    rosterGiving.players = rosterGiving.players.filter(pid => {
-        const playerNum = Number(pid);
-        const shouldRemove = playerIdsGivingNormalized.includes(playerNum);
-        if (shouldRemove) {
-            console.log(`✓ Removing player ${pid} from ${state.leagueData.ownerMap[ownerIdGiving]}`);
-        }
-        return !shouldRemove;
-    });
-    
-    // Add players to receiving owner - avoid duplicates
-    playerIdsReceivingNormalized.forEach(pid => {
-        if (!rosterReceiving.players.map(p => Number(p)).includes(pid)) {
-            rosterReceiving.players.push(pid);
-            console.log(`✓ Adding player ${pid} to ${state.leagueData.ownerMap[ownerIdReceiving]}`);
-        } else {
-            console.log(`⚠️ Player ${pid} already on ${state.leagueData.ownerMap[ownerIdReceiving]}`);
-        }
-    });
-    
-    console.log(`After: ${state.leagueData.ownerMap[ownerIdGiving]} has ${rosterGiving.players.length} players:`, rosterGiving.players);
-    console.log(`After: ${state.leagueData.ownerMap[ownerIdReceiving]} has ${rosterReceiving.players.length} players:`, rosterReceiving.players);
-    
-    // Save the corrected rosters to Firebase
-    saveRosters(state.leagueData.rosters).then(() => {
-        console.log('✓ Trade fix saved to Firebase!');
-    }).catch(err => {
-        console.error('Failed to save trade fix:', err);
-    });
-    
-    // Stop auto-refresh to prevent overwriting this fix
-    stopRosterRefresh();
-    console.log('⚠️ Auto-refresh stopped to preserve manual fix');
-    
-    // Re-render if viewing league view
-    if (state.currentView === 'league') {
-        renderView('league');
-    }
-    
-    console.log('✓ Trade fix applied! Rosters have been updated.');
-};
-
-// Refresh state from Firebase - use this after fixTrade if changes don't appear
-window.refreshStateFromFirebase = async function() {
-    console.log('Refreshing all state from Firebase...');
-    state.protections = await loadProtections();
-    state.draftPicks = await loadDraftPicks();
-    state.draftOrder = await loadDraftOrder();
-    const dispersedArray = await loadDispersed();
-    state.dispersed = new Set(dispersedArray);
-    const rosters = await loadRosters();
-    if (rosters) {
-        state.leagueData.rosters = rosters;
-    }
-    console.log('✓ State refreshed from Firebase');
-    renderView(state.currentView);
-};
 
 init();                
