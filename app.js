@@ -1048,7 +1048,6 @@ function renderTableView(container, filtered, currentDrafter) {
                 <div style="display: flex; gap: 0.5rem;">
                     <button class="btn btn-secondary" id="toggle-view-btn">📋 Roster View</button>
                     ${state.adminAuthenticated ? `<button class="btn btn-danger" id="admin-reset-draft-btn">🔄 Reset Draft (Admin)</button>` : ''}
-                    <button class="btn btn-danger" id="reset-btn">Reset Draft</button>
                 </div>
             </div>
             <div class="input-group" style="max-width: 400px; margin-bottom: 1rem;">
@@ -1074,7 +1073,7 @@ function renderTableView(container, filtered, currentDrafter) {
                     </thead>
                     <tbody>
                         ${searchFiltered.map(player => {
-                            const canDraft = getTeamPicksCount(player.originalOwnerId) < getMaxPicksPerTeam();
+                            const canDraft = state.dispersed.has(player.originalOwnerId) || getTeamPicksCount(player.originalOwnerId) < getMaxPicksPerTeam();
                             const isSelected = state.selectedPlayer?.playerId === player.playerId;
                             return `
                                 <tr class="${isSelected ? 'selected' : ''}" data-player-id="${player.playerId}" data-owner-id="${player.originalOwnerId}"
@@ -1193,7 +1192,6 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                 <div style="display: flex; gap: 0.5rem;">
                     <button class="btn btn-secondary" id="toggle-view-btn">📊 Table View</button>
                     ${state.adminAuthenticated ? `<button class="btn btn-danger" id="admin-reset-draft-btn">🔄 Reset Draft (Admin)</button>` : ''}
-                    <button class="btn btn-danger" id="reset-btn">Reset Draft</button>
                 </div>
             </div>
             <div class="input-group" style="max-width: 400px; margin-bottom: 1rem;">
@@ -1223,7 +1221,7 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                             </thead>
                             <tbody>
                                 ${(state.positionFilter === 'ALL' ? availablePlayers : availablePlayers.filter(p => p.position === state.positionFilter)).filter(p => fuzzyMatch(p.name, state.searchTerm)).map(player => {
-                                    const canDraft = getTeamPicksCount(player.originalOwnerId) < getMaxPicksPerTeam();
+                                    const canDraft = state.dispersed.has(player.originalOwnerId) || getTeamPicksCount(player.originalOwnerId) < getMaxPicksPerTeam();
                                     const isSelected = state.selectedPlayer?.playerId === player.playerId;
                                     return `
                                         <tr class="${isSelected ? 'selected' : ''}" data-player-id="${player.playerId}" data-owner-id="${player.originalOwnerId}"
@@ -1405,21 +1403,7 @@ function setupDraftEventListeners(container, playerPool) {
         });
     }
 
-    document.getElementById('reset-btn').addEventListener('click', () => {
-        if (confirm('Reset the entire draft? This cannot be undone.')) {
-            if (!isDraftStarted()) {
-                alert('Cannot reset draft before it has started.');
-                return;
-            }
-            state.draftPicks = [];
-            state.currentPick = 0;
-            state.timeRemaining = PICK_TIME_LIMIT;
-            state.selectedPlayer = null;
-            saveDraftPicks([]);
-            stopTimer();
-            renderDraftView(container);
-        }
-    });
+
 
     if (document.getElementById('toggle-view-btn')) {
         document.getElementById('toggle-view-btn').addEventListener('click', () => {
