@@ -200,7 +200,7 @@ async function init() {
             if (rosters) {
                 console.log('✓ Rosters updated via manual fix');
                 state.leagueData.rosters = rosters;
-                if (state.currentView === 'league' || state.currentView === 'draft' || state.currentView === 'setup') {
+                if (state.currentView === 'protect' || state.currentView === 'league' || state.currentView === 'draft' || state.currentView === 'setup') {
                     renderView(state.currentView);
                 }
             }
