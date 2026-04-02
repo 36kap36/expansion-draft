@@ -945,7 +945,6 @@ function renderLeagueView(container) {
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h2 class="card-title"><span>🏈</span> League Rosters</h2>
-                <button class="btn btn-primary" id="refresh-rosters-btn" style="font-size: 0.875rem; padding: 0.5rem 1rem;">🔄 Refresh Rosters</button>
             </div>
         </div>
         ${state.leagueData.rosters.map(roster => {
@@ -1009,36 +1008,6 @@ function renderLeagueView(container) {
             `;
         }).join('')}
     `;
-    
-    // Add event listener for refresh button
-    const refreshBtn = document.getElementById('refresh-rosters-btn');
-    if (refreshBtn) {
-        const protectionsLocked = areProtectionsLocked();
-        if (protectionsLocked) {
-            refreshBtn.disabled = true;
-            refreshBtn.title = 'Roster refresh disabled after protections lock';
-            refreshBtn.style.opacity = '0.5';
-            refreshBtn.style.cursor = 'not-allowed';
-        } else {
-            refreshBtn.addEventListener('click', async () => {
-                const btn = document.getElementById('refresh-rosters-btn');
-                btn.disabled = true;
-                btn.textContent = '⏳ Loading...';
-                
-                try {
-                    const newLeagueData = await fetchLeagueData();
-                    state.leagueData = newLeagueData;
-                    renderView('league');
-                    console.log('Rosters refreshed successfully');
-                } catch (error) {
-                    console.error('Error refreshing rosters:', error);
-                    alert('Failed to refresh rosters. Please try again.');
-                    btn.disabled = false;
-                    btn.textContent = '🔄 Refresh Rosters';
-                }
-            });
-        }
-    }
 }
 
 function renderDraftView(container) {
@@ -1540,14 +1509,14 @@ function fillRosterSlots(picks) {
 }
 
 function getAvailablePlayers() {
-    const draftedIds = new Set(state.draftPicks.map(p => p.playerId));
+    const draftedIds = new Set(state.draftPicks.map(p => String(p.playerId)));
     const pool = [];
     const addedPlayerIds = new Set(); // Track already-added players to prevent duplicates
     
-    // Get all rostered players
+    // Get all rostered players - normalize IDs to strings for consistent comparison
     const rosteredPlayerIds = new Set();
     state.leagueData.rosters.forEach(roster => {
-        (roster.players || []).forEach(pid => rosteredPlayerIds.add(pid));
+        (roster.players || []).forEach(pid => rosteredPlayerIds.add(String(pid)));
     });
     
     // Add rostered players (existing logic)
@@ -1558,14 +1527,15 @@ function getAvailablePlayers() {
         let protectedIds = [];
         
         if (Array.isArray(protectionData)) {
-            protectedIds = protectionData;
+            protectedIds = protectionData.map(p => String(p));
         } else if (protectionData && protectionData.players) {
-            protectedIds = protectionData.players;
+            protectedIds = protectionData.players.map(p => String(p));
         }
         
         (roster.players || []).forEach(playerId => {
+            const playerIdStr = String(playerId);
             // Skip if already added, drafted, or protected
-            if (addedPlayerIds.has(playerId) || draftedIds.has(playerId) || protectedIds.includes(playerId)) {
+            if (addedPlayerIds.has(playerIdStr) || draftedIds.has(playerIdStr) || protectedIds.includes(playerIdStr)) {
                 return;
             }
             
@@ -1583,13 +1553,14 @@ function getAvailablePlayers() {
                 posRank: ranking.posRank
             });
             
-            addedPlayerIds.add(playerId);
+            addedPlayerIds.add(playerIdStr);
         });
     });
     
     // Add free agents (not on any roster)
     Object.entries(state.leagueData.players).forEach(([playerId, player]) => {
-        if (!addedPlayerIds.has(playerId) && !rosteredPlayerIds.has(playerId) && !draftedIds.has(playerId)) {
+        const playerIdStr = String(playerId);
+        if (!addedPlayerIds.has(playerIdStr) && !rosteredPlayerIds.has(playerIdStr) && !draftedIds.has(playerIdStr)) {
             // Only include NFL players (exclude practice squad, retired, etc.)
             if (player.active && player.team && player.team !== 'None') {
                 const ranking = state.rankings[playerId] || { overallRank: 9999, posRank: 999 };
@@ -1605,7 +1576,7 @@ function getAvailablePlayers() {
                     posRank: ranking.posRank
                 });
                 
-                addedPlayerIds.add(playerId);
+                addedPlayerIds.add(playerIdStr);
             }
         }
     });
