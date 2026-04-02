@@ -791,13 +791,16 @@ function renderProtectView(container) {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
                 
-                const playerId = item.dataset.playerId;
+                const playerId = String(item.dataset.playerId);
                 const scrollPos = tableContainer.scrollTop;
                 
-                if (state.selectedPlayers.includes(playerId)) {
-                    state.selectedPlayers = state.selectedPlayers.filter(id => id !== playerId);
+                // Normalize all IDs to strings for comparison
+                const normalizedSelected = state.selectedPlayers.map(p => String(p));
+                
+                if (normalizedSelected.includes(playerId)) {
+                    state.selectedPlayers = state.selectedPlayers.filter(id => String(id) !== playerId);
                 } else {
-                    state.selectedPlayers = [...state.selectedPlayers, playerId];
+                    state.selectedPlayers.push(playerId);
                 }
                 
                 renderProtectView(container);
