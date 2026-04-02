@@ -1745,22 +1745,35 @@ window.fixTrade = function(ownerIdGiving, playerIdsGiving, ownerIdReceiving, pla
         return;
     }
     
-    // Remove players from giving owner
-    playerIdsGiving.forEach(pid => {
-        const idx = rosterGiving.players.indexOf(pid);
-        if (idx > -1) {
-            rosterGiving.players.splice(idx, 1);
-            console.log(`Removed player ${pid} from ${state.leagueData.ownerMap[ownerIdGiving]}`);
+    console.log(`Before: ${state.leagueData.ownerMap[ownerIdGiving]} has ${rosterGiving.players.length} players:`, rosterGiving.players);
+    console.log(`Before: ${state.leagueData.ownerMap[ownerIdReceiving]} has ${rosterReceiving.players.length} players:`, rosterReceiving.players);
+    
+    // Normalize player IDs to numbers for comparison
+    const playerIdsGivingNormalized = playerIdsGiving.map(p => Number(p));
+    const playerIdsReceivingNormalized = playerIdsReceiving.map(p => Number(p));
+    
+    // Remove players from giving owner - create new array to ensure reactivity
+    rosterGiving.players = rosterGiving.players.filter(pid => {
+        const playerNum = Number(pid);
+        const shouldRemove = playerIdsGivingNormalized.includes(playerNum);
+        if (shouldRemove) {
+            console.log(`✓ Removing player ${pid} from ${state.leagueData.ownerMap[ownerIdGiving]}`);
+        }
+        return !shouldRemove;
+    });
+    
+    // Add players to receiving owner - avoid duplicates
+    playerIdsReceivingNormalized.forEach(pid => {
+        if (!rosterReceiving.players.map(p => Number(p)).includes(pid)) {
+            rosterReceiving.players.push(pid);
+            console.log(`✓ Adding player ${pid} to ${state.leagueData.ownerMap[ownerIdReceiving]}`);
+        } else {
+            console.log(`⚠️ Player ${pid} already on ${state.leagueData.ownerMap[ownerIdReceiving]}`);
         }
     });
     
-    // Add players to receiving owner
-    playerIdsReceiving.forEach(pid => {
-        if (!rosterReceiving.players.includes(pid)) {
-            rosterReceiving.players.push(pid);
-            console.log(`Added player ${pid} to ${state.leagueData.ownerMap[ownerIdReceiving]}`);
-        }
-    });
+    console.log(`After: ${state.leagueData.ownerMap[ownerIdGiving]} has ${rosterGiving.players.length} players:`, rosterGiving.players);
+    console.log(`After: ${state.leagueData.ownerMap[ownerIdReceiving]} has ${rosterReceiving.players.length} players:`, rosterReceiving.players);
     
     // Save the corrected rosters to Firebase
     saveRosters(state.leagueData.rosters).then(() => {
