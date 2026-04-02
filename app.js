@@ -145,11 +145,38 @@ async function init() {
         const dispersedArray = await loadDispersed();
         state.dispersed = new Set(dispersedArray);
         
+        listenToFirebase('protections', (protections) => {
+            if (protections) {
+                state.protections = protections;
+                if (state.currentView === 'protect' || state.currentView === 'setup') {
+                    renderView(state.currentView);
+                }
+            }
+        });
+        
+        listenToFirebase('draft_order', (order) => {
+            if (order) {
+                state.draftOrder = order;
+                if (state.currentView === 'setup' || state.currentView === 'league' || state.currentView === 'draft') {
+                    renderView(state.currentView);
+                }
+            }
+        });
+        
         listenToFirebase('draft_picks', (picks) => {
             if (picks) {
                 state.draftPicks = picks;
                 state.currentPick = picks.length;
                 if (state.currentView === 'draft' || state.currentView === 'league') {
+                    renderView(state.currentView);
+                }
+            }
+        });
+        
+        listenToFirebase('dispersed', (dispersedArray) => {
+            if (dispersedArray) {
+                state.dispersed = new Set(dispersedArray);
+                if (state.currentView === 'setup' || state.currentView === 'league' || state.currentView === 'draft') {
                     renderView(state.currentView);
                 }
             }
