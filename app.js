@@ -1097,38 +1097,38 @@ function renderTableView(container, filtered, currentDrafter) {
         </div>
         <div class="card">
             <h3 class="card-title">Draft History</h3>
-            <div class="draft-history">
-                ${state.draftPicks.map(pick => {
-                    const player = state.leagueData.players[pick.playerId] || {};
-                    const formatPickNumber = (pickNum) => {
-                        const round = Math.floor((pickNum - 1) / state.draftOrder.length) + 1;
-                        const pickInRound = ((pickNum - 1) % state.draftOrder.length) + 1;
-                        return `${round}.${pickInRound.toString().padStart(2, '0')}`;
-                    };
-                    const originalTeamName = pick.originalOwnerId === 'FA' ? 'Free Agent' : state.leagueData.ownerMap[pick.originalOwnerId];
-                    return `
-                        <div class="draft-pick" style="display: flex; align-items: center; gap: 1.5rem; padding: 1rem; border-bottom: 1px solid #334155;">
-                            <div style="min-width: 50px; text-align: center;">
-                                <div style="color: #60a5fa; font-weight: 600; font-size: 1.125rem;">${formatPickNumber(pick.pickNumber)}</div>
-                            </div>
-                            <div style="flex: 1;">
-                                <div style="color: white; font-weight: 600; font-size: 1rem; margin-bottom: 0.25rem;">${player.full_name}</div>
-                                <div style="color: #94a3b8; font-size: 0.875rem;">${player.position}</div>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 0.75rem; min-width: 200px; justify-content: flex-end;">
-                                <div style="text-align: right;">
-                                    <div style="color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Original</div>
-                                    <div style="color: #60a5fa; font-size: 0.9rem; font-weight: 500;">${originalTeamName}</div>
-                                </div>
-                                <div style="color: #475569; font-size: 1.25rem;">→</div>
-                                <div style="text-align: left;">
-                                    <div style="color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Drafted By</div>
-                                    <div style="color: #6ee7b7; font-size: 0.9rem; font-weight: 500;">${pick.teamId}</div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }).join('')}
+            <div class="table-container">
+                <table class="player-table">
+                    <thead>
+                        <tr>
+                            <th>Pick</th>
+                            <th>Player</th>
+                            <th>Pos</th>
+                            <th>Original Team</th>
+                            <th>Drafted By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${state.draftPicks.map(pick => {
+                            const player = state.leagueData.players[pick.playerId] || {};
+                            const formatPickNumber = (pickNum) => {
+                                const round = Math.floor((pickNum - 1) / state.draftOrder.length) + 1;
+                                const pickInRound = ((pickNum - 1) % state.draftOrder.length) + 1;
+                                return `${round}.${pickInRound.toString().padStart(2, '0')}`;
+                            };
+                            const originalTeamName = pick.originalOwnerId === 'FA' ? 'Free Agent' : state.leagueData.ownerMap[pick.originalOwnerId];
+                            return `
+                                <tr>
+                                    <td><span class="rank-badge">${formatPickNumber(pick.pickNumber)}</span></td>
+                                    <td style="font-weight: 600;">${player.full_name}</td>
+                                    <td>${player.position}</td>
+                                    <td><span style="color: #60a5fa;">${originalTeamName}</span></td>
+                                    <td><span style="color: #6ee7b7;">${pick.teamId}</span></td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
             </div>
         </div>
     `;
