@@ -16,7 +16,7 @@ const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DL", "DE", "LB", "DB"];
 const ROSTER_SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "FLEX", "SUPERFLEX", "K", "DL", "LB", "DB"];
 const PICK_TIME_LIMIT = 43200; // 12 hours in seconds
 const DRAFT_START_TIME = new Date('2026-04-10T23:00:00Z'); // April 10th, 7 PM Eastern (11 PM UTC)
-const MAX_DRAFT_ROUNDS = 12;
+const MAX_DRAFT_PICKS = 36; // Total picks in the draft (3 rounds x 12 picks)
 const PROTECTIONS_LOCK_TIME = new Date('2026-04-02T15:59:00Z'); // April 2nd, 11:59 AM ET (3:59 PM UTC)
 
 // Base max picks per team is 3; increases by 2 for each dispersed team
@@ -52,11 +52,9 @@ function getCountdownToDraftStart() {
     return { days, hours, minutes, seconds, started: false };
 }
 
-// Check if draft is complete (has reached max rounds)
+// Check if draft is complete (has reached 36 total picks)
 function isDraftComplete() {
-    if (state.draftOrder.length === 0) return false;
-    const maxPicks = MAX_DRAFT_ROUNDS * state.draftOrder.length;
-    return state.currentPick >= maxPicks;
+    return state.currentPick >= MAX_DRAFT_PICKS;
 }
 
 // Update player table visibility based on search term without full re-render
@@ -1038,7 +1036,7 @@ function renderTableView(container, filtered, currentDrafter) {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <div class="draft-header" style="margin-bottom: 0;">
                     <div class="draft-info">
-                        <h2>Pick #${state.currentPick + 1} / ${MAX_DRAFT_ROUNDS * state.draftOrder.length}</h2>
+                        <h2>Pick #${state.currentPick + 1} / ${MAX_DRAFT_PICKS}</h2>
                         <p>Now drafting: <strong style="color: white;">${currentDrafter}</strong></p>
                     </div>
                     <div class="draft-timer">
@@ -1107,6 +1105,7 @@ function renderTableView(container, filtered, currentDrafter) {
                         const pickInRound = ((pickNum - 1) % state.draftOrder.length) + 1;
                         return `${round}.${pickInRound.toString().padStart(2, '0')}`;
                     };
+                    const originalTeam = pick.originalOwnerId === 'FA' ? 'Free Agent' : pick.originalOwnerId;
                     return `
                         <div class="draft-pick">
                             <div>
@@ -1114,7 +1113,11 @@ function renderTableView(container, filtered, currentDrafter) {
                                 <span style="color: white; font-weight: 600; margin-left: 0.5rem;">${player.full_name}</span>
                                 <span style="color: #94a3b8; font-size: 0.875rem; margin-left: 0.5rem;">(${player.position})</span>
                             </div>
-                            <span style="color: #60a5fa; font-size: 0.875rem;">${pick.teamId}</span>
+                            <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.875rem;">
+                                <span style="color: #60a5fa;">${originalTeam}</span>
+                                <span style="color: #94a3b8;">→</span>
+                                <span style="color: #6ee7b7;">${pick.teamId}</span>
+                            </div>
                         </div>
                     `;
                 }).join('')}
@@ -1182,7 +1185,7 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <div class="draft-header" style="margin-bottom: 0;">
                     <div class="draft-info">
-                        <h2>Pick #${state.currentPick + 1} / ${MAX_DRAFT_ROUNDS * state.draftOrder.length}</h2>
+                        <h2>Pick #${state.currentPick + 1} / ${MAX_DRAFT_PICKS}</h2>
                         <p>Now drafting: <strong style="color: white;">${currentDrafter}</strong></p>
                     </div>
                     <div class="draft-timer">
@@ -1248,7 +1251,7 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
             <div>
                 ${state.draftOrder.map(teamId => {
                     const roster = getTeamRoster(teamId);
-                    const rosterBySlot = fillRosterSlots(roster);
+                    const { slots: rosterBySlot, benchPicks } = fillRosterSlots(roster);
                     return `
                         <div class="team-roster">
                             <div class="team-header">
@@ -1277,6 +1280,23 @@ function renderRosterBoard(container, availablePlayers, currentDrafter) {
                                     `;
                                 }
                             }).join('')}
+                            ${benchPicks.length > 0 ? `
+                                <div class="bench-section">
+                                    <div class="bench-label">Bench</div>
+                                    ${benchPicks.map(pick => {
+                                        const player = state.leagueData.players[pick.playerId] || {};
+                                        return `
+                                            <div class="roster-slot filled">
+                                                <div>
+                                                    <div class="roster-slot-label">BENCH</div>
+                                                    <div class="roster-slot-player">${player.full_name} (${player.position})</div>
+                                                </div>
+                                                <span style="color: #94a3b8; font-size: 0.75rem;">${formatPickNumber(pick.pickNumber)}</span>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            ` : ''}
                         </div>
                     `;
                 }).join('')}
@@ -1412,7 +1432,7 @@ function setupDraftEventListeners(container, playerPool) {
         });
     }
 
-    if (isDraftStarted() && state.currentPick < (MAX_DRAFT_ROUNDS * state.draftOrder.length)) {
+    if (isDraftStarted() && state.currentPick < MAX_DRAFT_PICKS) {
         startTimer();
     }
 }
@@ -1420,10 +1440,12 @@ function setupDraftEventListeners(container, playerPool) {
 function fillRosterSlots(picks) {
     const slots = new Array(ROSTER_SLOTS.length).fill(null);
     const sortedPicks = [...picks].sort((a, b) => a.pickNumber - b.pickNumber);
+    let benchPicks = [];
 
     sortedPicks.forEach(pick => {
         const player = state.leagueData.players[pick.playerId] || {};
         const pos = player.position || '?';
+        let assigned = false;
 
         for (let i = 0; i < ROSTER_SLOTS.length; i++) {
             if (slots[i] === null) {
@@ -1431,28 +1453,38 @@ function fillRosterSlots(picks) {
                 
                 if (slotName === pos) {
                     slots[i] = pick;
+                    assigned = true;
                     return;
                 } else if (slotName === 'FLEX' && ['RB', 'WR', 'TE'].includes(pos)) {
                     slots[i] = pick;
+                    assigned = true;
                     return;
                 } else if (slotName === 'SUPERFLEX' && ['QB', 'RB', 'WR', 'TE'].includes(pos)) {
                     slots[i] = pick;
+                    assigned = true;
                     return;
                 } else if (slotName === 'DL' && (pos === 'DL' || pos === 'DE')) {
                     slots[i] = pick;
+                    assigned = true;
                     return;
                 } else if (slotName === 'LB' && pos === 'LB') {
                     slots[i] = pick;
+                    assigned = true;
                     return;
                 } else if (slotName === 'DB' && pos === 'DB') {
                     slots[i] = pick;
+                    assigned = true;
                     return;
                 }
             }
         }
+        
+        if (!assigned) {
+            benchPicks.push(pick);
+        }
     });
 
-    return slots;
+    return { slots, benchPicks };
 }
 
 function getAvailablePlayers() {
