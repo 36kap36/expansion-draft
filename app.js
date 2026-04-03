@@ -1105,7 +1105,7 @@ function renderTableView(container, filtered, currentDrafter) {
                         const pickInRound = ((pickNum - 1) % state.draftOrder.length) + 1;
                         return `${round}.${pickInRound.toString().padStart(2, '0')}`;
                     };
-                    const originalTeam = pick.originalOwnerId === 'FA' ? 'Free Agent' : pick.originalOwnerId;
+                    const originalTeamName = pick.originalOwnerId === 'FA' ? 'Free Agent' : state.leagueData.ownerMap[pick.originalOwnerId];
                     return `
                         <div class="draft-pick">
                             <div>
@@ -1114,7 +1114,7 @@ function renderTableView(container, filtered, currentDrafter) {
                                 <span style="color: #94a3b8; font-size: 0.875rem; margin-left: 0.5rem;">(${player.position})</span>
                             </div>
                             <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.875rem;">
-                                <span style="color: #60a5fa;">${originalTeam}</span>
+                                <span style="color: #60a5fa;">${originalTeamName}</span>
                                 <span style="color: #94a3b8;">→</span>
                                 <span style="color: #6ee7b7;">${pick.teamId}</span>
                             </div>
