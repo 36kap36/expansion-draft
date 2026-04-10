@@ -15,7 +15,7 @@ const POSITION_LIMITS = {
 const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DL", "DE", "LB", "DB"];
 const ROSTER_SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "FLEX", "SUPERFLEX", "K", "DL", "LB", "DB"];
 const PICK_TIME_LIMIT = 43200; // 12 hours in seconds
-const DRAFT_START_TIME = new Date('2026-04-10T21:30:00Z'); // April 10th, 3:30 PM Eastern (11 PM UTC)
+const DRAFT_START_TIME = new Date('2026-04-10T19:30:00Z'); // April 10th, 3:30 PM Eastern (11 PM UTC)
 const MAX_DRAFT_PICKS = 36; // Total picks in the draft (3 rounds x 12 picks)
 const PROTECTIONS_LOCK_TIME = new Date('2026-04-02T15:59:00Z'); // April 2nd, 11:59 AM ET (3:59 PM UTC)
 
